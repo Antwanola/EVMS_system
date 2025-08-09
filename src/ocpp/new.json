@@ -1,0 +1,816 @@
+{
+    "details": {
+        "active-booking": {
+            "id": 80714,
+            "booking_id": "056712",
+            "booking_type": "Ride",
+            "vehicle_type": {
+                "id": 1,
+                "name": "eDryv Comfort",
+                "allow_ride": true,
+                "ride_per_km": 290.0,
+                "ride_per_min": 30.0,
+                "ride_base_fare": 1000.0,
+                "allow_rental": true,
+                "rental_per_hour": 8333.33,
+                "rental_per_day": 100000.0,
+                "rental_contingency": 10000.0,
+                "number_of_passengers": 4,
+                "number_of_bags": 2,
+                "max_weight": 15,
+                "published": true,
+                "image": {
+                    "id": 111,
+                    "media_type": "Image",
+                    "file": "/media/image/IMG-20231102-WA0005-removebg-preview_JdcGRsW.png",
+                    "updated_at": "07/03/2024 01:33"
+                }
+            },
+            "customer": {
+                "username": "9P8WgYxNLD",
+                "user_type": "Customer",
+                "first_name": "roy",
+                "last_name": "roy",
+                "number": "2348104638736",
+                "email": "aiyetinroy@gmail.com",
+                "avatar": "/media/customer/image_picker_5B2D7D88-0FD1-49BA-9813-844BF94B108F-3413-00000073FFFD1280.jpg",
+                "number_of_trips": 20,
+                "mac_address": null
+            },
+            "driver": {
+                "username": "wTAZLZYn4J",
+                "user_type": "Driver",
+                "first_name": "Roy Nkem",
+                "last_name": "Aiyetin",
+                "number": "2348068707687",
+                "email": "royaiyetin@gmail.com",
+                "avatar": "/media/driver/scaled_1000000031.jpg",
+                "number_of_trips": 54,
+                "mac_address": null,
+                "rating": 5
+            },
+            "vehicle": {
+                "id": 11,
+                "vehicle_type": {
+                    "id": 1,
+                    "name": "eDryv Comfort",
+                    "allow_ride": true,
+                    "ride_per_km": 290.0,
+                    "ride_per_min": 30.0,
+                    "ride_base_fare": 1000.0,
+                    "allow_rental": true,
+                    "rental_per_hour": 8333.33,
+                    "rental_per_day": 100000.0,
+                    "rental_contingency": 10000.0,
+                    "number_of_passengers": 4,
+                    "number_of_bags": 2,
+                    "max_weight": 15,
+                    "published": true,
+                    "image": {
+                        "id": 111,
+                        "media_type": "Image",
+                        "file": "/media/image/IMG-20231102-WA0005-removebg-preview_JdcGRsW.png",
+                        "updated_at": "07/03/2024 01:33"
+                    }
+                },
+                "license_number": "ABC12345XY67",
+                "image": {
+                    "id": 263,
+                    "media_type": "Image",
+                    "file": "/media/image/IMG-20231102-WA0022-removebg-preview_1_XcWIx0x.png",
+                    "updated_at": "02/10/2024 20:07"
+                },
+                "color": "Blue",
+                "battery_level": 87.48,
+                "mileage_left": 174.95,
+                "rating": 5,
+                "cug": null
+            },
+            "proxy": {
+                "customer": null,
+                "contact_name": "",
+                "contact_number": ""
+            },
+            "pickupinfo_set": [
+                {
+                    "pickup_date_time": "28/07/2025 10:20",
+                    "arrived_at": "28/07/2025 10:24",
+                    "started_at": "28/07/2025 10:24",
+                    "order": 1,
+                    "address": "1415 Adetokunbo Ademola Street, Eko Hotel Roundabout, Victoria Island, Lagos 106104, Lagos, Nigeria",
+                    "latitude": 6.4280311,
+                    "longitude": 3.4217793,
+                    "completed": true,
+                    "driver_name": null,
+                    "driver_number": null,
+                    "driver_license_number": null,
+                    "vehicle_license_number": null,
+                    "task": null,
+                    "reminder_task": null,
+                    "driver": null,
+                    "vehicle": null
+                }
+            ],
+            "dropoffinfo_set": [
+                {
+                    "id": 87104,
+                    "dropped_off_at": "28/07/2025 10:27",
+                    "order": 1,
+                    "address": "Oriental Hotel, Lekki - Epe Expressway, Lagos, Nigeria",
+                    "latitude": 6.435814100000002,
+                    "longitude": 3.4446785,
+                    "completed": true,
+                    "duration": 0.0,
+                    "distance": 0.0,
+                    "extra_hours": 0.0,
+                    "polyline": null,
+                    "polylines": null,
+                    "driver_name": null,
+                    "driver_number": null,
+                    "driver_license_number": null,
+                    "vehicle_license_number": null,
+                    "driver": null,
+                    "vehicle": null
+                }
+            ],
+            "status": "Ended",
+            "payment_method": "Card",
+            "card": {
+                "id": 101,
+                "customer": 177,
+                "name": "Card 1",
+                "last_four_digits": "4081",
+                "expiry_month": 2,
+                "expiry_year": 26,
+                "expired": false
+            },
+            "use_greencoin": true,
+            "sub_total": 2244.5,
+            "discount": 0.0,
+            "total": 2244.5,
+            "duration": 3.17,
+            "distance": 3.86,
+            "polyline": "gpff@oj{SmDANeBFiCAkC?QS@oC?uMBuC?yH@uBC{AIaAIwCe@O]GU@U\\mA}CiAo@SiAQ}@EUDOCUGSOUSc@oCSgBG_AM{DOmFQyCGy@c@}Ci@mCgAqEWyAMoACi@Bm@X{AVw@Te@fCcDn@y@\\k@x@oB|EcLtDoFVi@lBaExAgD{@UYI?K?[FKRGRINKL_@NeABs@A{ACe@WBAOCQ",
+            "estimated_total": 2419.4,
+            "temp_duration": 10.0,
+            "temp_distance": 3.86,
+            "temp_polyline": "gpff@oj{SmDANeBFiCAkC?QS@oC?uMBuC?yH@uBC{AIaAIwCe@O]GU@U\\mA}CiAo@SiAQ}@EUDOCUGSOUSc@oCSgBG_AM{DOmFQyCGy@c@}Ci@mCgAqEWyAMoACi@Bm@X{AVw@Te@fCcDn@y@\\k@x@oB|EcLtDoFVi@lBaExAgD{@UYI?K?[FKRGRINKL_@NeABs@A{ACe@WBAOCQ",
+            "rating": null,
+            "created_at": "28/07/2025 10:22",
+            "updated_at": "28/07/2025 10:27",
+            "co2_emissions_saved": 613.74,
+            "pin": "2175",
+            "transactions": [
+                {
+                    "id": 33448,
+                    "payment_method": "Green Coin",
+                    "mode": "Credit",
+                    "item": {
+                        "type": "booking",
+                        "id": 80714
+                    },
+                    "reference": "eDryv-green-coin-earn-056712-28-07-2025.10-27-24",
+                    "payment_url": null,
+                    "amount": 17.77,
+                    "extra_info": "0.94 Greencoins (\u20a618.91 per greencoin) from Ride - 056712",
+                    "paid": true,
+                    "created_at": "28/07/2025 10:27",
+                    "updated_at": "28/07/2025 10:27"
+                },
+                {
+                    "id": 33447,
+                    "payment_method": "Paystack",
+                    "mode": "Debit",
+                    "item": {
+                        "type": "booking",
+                        "id": 80714
+                    },
+                    "reference": "eDryv-paystack-056712-28-07-2025.10-27-24",
+                    "payment_url": "https://checkout.paystack.com/8bii3al2edkyuqx",
+                    "amount": 2244.5,
+                    "extra_info": "Unable to initialize charge",
+                    "paid": false,
+                    "created_at": "28/07/2025 10:27",
+                    "updated_at": "28/07/2025 10:27"
+                }
+            ],
+            "greencoin_earned": 0.94,
+            "greencoin_exchange_rate": 18.91,
+            "greencoin_value": 17.77,
+            "share_trip_url": "https://edryv.folti.io/trip/gAAAAABoh4gvJ2T-X8Gb4mrZwjZPmAfOHBOw5C5bONM7w7kmu14ScyXND_fkvdQ0Ox6wnfuMOLq-GnmKd5oF7vx_gpuJw77Qmg==/"
+        },
+        "last-booking": {
+            "id": 80714,
+            "booking_id": "056712",
+            "booking_type": "Ride",
+            "vehicle_type": {
+                "id": 1,
+                "name": "eDryv Comfort",
+                "allow_ride": true,
+                "ride_per_km": 290.0,
+                "ride_per_min": 30.0,
+                "ride_base_fare": 1000.0,
+                "allow_rental": true,
+                "rental_per_hour": 8333.33,
+                "rental_per_day": 100000.0,
+                "rental_contingency": 10000.0,
+                "number_of_passengers": 4,
+                "number_of_bags": 2,
+                "max_weight": 15,
+                "published": true,
+                "image": {
+                    "id": 111,
+                    "media_type": "Image",
+                    "file": "/media/image/IMG-20231102-WA0005-removebg-preview_JdcGRsW.png",
+                    "updated_at": "07/03/2024 01:33"
+                }
+            },
+            "customer": {
+                "username": "9P8WgYxNLD",
+                "user_type": "Customer",
+                "first_name": "roy",
+                "last_name": "roy",
+                "number": "2348104638736",
+                "email": "aiyetinroy@gmail.com",
+                "avatar": "/media/customer/image_picker_5B2D7D88-0FD1-49BA-9813-844BF94B108F-3413-00000073FFFD1280.jpg",
+                "number_of_trips": 20,
+                "mac_address": null
+            },
+            "driver": {
+                "username": "wTAZLZYn4J",
+                "user_type": "Driver",
+                "first_name": "Roy Nkem",
+                "last_name": "Aiyetin",
+                "number": "2348068707687",
+                "email": "royaiyetin@gmail.com",
+                "avatar": "/media/driver/scaled_1000000031.jpg",
+                "number_of_trips": 54,
+                "mac_address": null,
+                "rating": 5
+            },
+            "vehicle": {
+                "id": 11,
+                "vehicle_type": {
+                    "id": 1,
+                    "name": "eDryv Comfort",
+                    "allow_ride": true,
+                    "ride_per_km": 290.0,
+                    "ride_per_min": 30.0,
+                    "ride_base_fare": 1000.0,
+                    "allow_rental": true,
+                    "rental_per_hour": 8333.33,
+                    "rental_per_day": 100000.0,
+                    "rental_contingency": 10000.0,
+                    "number_of_passengers": 4,
+                    "number_of_bags": 2,
+                    "max_weight": 15,
+                    "published": true,
+                    "image": {
+                        "id": 111,
+                        "media_type": "Image",
+                        "file": "/media/image/IMG-20231102-WA0005-removebg-preview_JdcGRsW.png",
+                        "updated_at": "07/03/2024 01:33"
+                    }
+                },
+                "license_number": "ABC12345XY67",
+                "image": {
+                    "id": 263,
+                    "media_type": "Image",
+                    "file": "/media/image/IMG-20231102-WA0022-removebg-preview_1_XcWIx0x.png",
+                    "updated_at": "02/10/2024 20:07"
+                },
+                "color": "Blue",
+                "battery_level": 87.48,
+                "mileage_left": 174.95,
+                "rating": 5,
+                "cug": null
+            },
+            "proxy": {
+                "customer": null,
+                "contact_name": "",
+                "contact_number": ""
+            },
+            "pickupinfo_set": [
+                {
+                    "pickup_date_time": "28/07/2025 10:20",
+                    "arrived_at": "28/07/2025 10:24",
+                    "started_at": "28/07/2025 10:24",
+                    "order": 1,
+                    "address": "1415 Adetokunbo Ademola Street, Eko Hotel Roundabout, Victoria Island, Lagos 106104, Lagos, Nigeria",
+                    "latitude": 6.4280311,
+                    "longitude": 3.4217793,
+                    "completed": true,
+                    "driver_name": null,
+                    "driver_number": null,
+                    "driver_license_number": null,
+                    "vehicle_license_number": null,
+                    "task": null,
+                    "reminder_task": null,
+                    "driver": null,
+                    "vehicle": null
+                }
+            ],
+            "dropoffinfo_set": [
+                {
+                    "id": 87104,
+                    "dropped_off_at": "28/07/2025 10:27",
+                    "order": 1,
+                    "address": "Oriental Hotel, Lekki - Epe Expressway, Lagos, Nigeria",
+                    "latitude": 6.435814100000002,
+                    "longitude": 3.4446785,
+                    "completed": true,
+                    "duration": 0.0,
+                    "distance": 0.0,
+                    "extra_hours": 0.0,
+                    "polyline": null,
+                    "polylines": null,
+                    "driver_name": null,
+                    "driver_number": null,
+                    "driver_license_number": null,
+                    "vehicle_license_number": null,
+                    "driver": null,
+                    "vehicle": null
+                }
+            ],
+            "status": "Ended",
+            "payment_method": "Card",
+            "card": {
+                "id": 101,
+                "customer": 177,
+                "name": "Card 1",
+                "last_four_digits": "4081",
+                "expiry_month": 2,
+                "expiry_year": 26,
+                "expired": false
+            },
+            "use_greencoin": true,
+            "sub_total": 2244.5,
+            "discount": 0.0,
+            "total": 2244.5,
+            "duration": 3.17,
+            "distance": 3.86,
+            "polyline": "gpff@oj{SmDANeBFiCAkC?QS@oC?uMBuC?yH@uBC{AIaAIwCe@O]GU@U\\mA}CiAo@SiAQ}@EUDOCUGSOUSc@oCSgBG_AM{DOmFQyCGy@c@}Ci@mCgAqEWyAMoACi@Bm@X{AVw@Te@fCcDn@y@\\k@x@oB|EcLtDoFVi@lBaExAgD{@UYI?K?[FKRGRINKL_@NeABs@A{ACe@WBAOCQ",
+            "estimated_total": 2419.4,
+            "temp_duration": 10.0,
+            "temp_distance": 3.86,
+            "temp_polyline": "gpff@oj{SmDANeBFiCAkC?QS@oC?uMBuC?yH@uBC{AIaAIwCe@O]GU@U\\mA}CiAo@SiAQ}@EUDOCUGSOUSc@oCSgBG_AM{DOmFQyCGy@c@}Ci@mCgAqEWyAMoACi@Bm@X{AVw@Te@fCcDn@y@\\k@x@oB|EcLtDoFVi@lBaExAgD{@UYI?K?[FKRGRINKL_@NeABs@A{ACe@WBAOCQ",
+            "rating": null,
+            "created_at": "28/07/2025 10:22",
+            "updated_at": "28/07/2025 10:27",
+            "co2_emissions_saved": 613.74,
+            "pin": "2175",
+            "transactions": [
+                {
+                    "id": 33448,
+                    "payment_method": "Green Coin",
+                    "mode": "Credit",
+                    "item": {
+                        "type": "booking",
+                        "id": 80714
+                    },
+                    "reference": "eDryv-green-coin-earn-056712-28-07-2025.10-27-24",
+                    "payment_url": null,
+                    "amount": 17.77,
+                    "extra_info": "0.94 Greencoins (\u20a618.91 per greencoin) from Ride - 056712",
+                    "paid": true,
+                    "created_at": "28/07/2025 10:27",
+                    "updated_at": "28/07/2025 10:27"
+                },
+                {
+                    "id": 33447,
+                    "payment_method": "Paystack",
+                    "mode": "Debit",
+                    "item": {
+                        "type": "booking",
+                        "id": 80714
+                    },
+                    "reference": "eDryv-paystack-056712-28-07-2025.10-27-24",
+                    "payment_url": "https://checkout.paystack.com/8bii3al2edkyuqx",
+                    "amount": 2244.5,
+                    "extra_info": "Unable to initialize charge",
+                    "paid": false,
+                    "created_at": "28/07/2025 10:27",
+                    "updated_at": "28/07/2025 10:27"
+                }
+            ],
+            "greencoin_earned": 0.94,
+            "greencoin_exchange_rate": 18.91,
+            "greencoin_value": 17.77,
+            "share_trip_url": "https://edryv.folti.io/trip/gAAAAABoh4gvEOnxFpuNn6KLGm7pQ-PG5iKrfFZUOsRGcImp-_w940r8JCcsiVMoV6nq0pCt7cVs7eAHA3ZPrQuMkR4j-tF6eg==/"
+        },
+        "booking-types": [
+            {
+                "id": 0,
+                "name": "Ride"
+            },
+            {
+                "id": 1,
+                "name": "Scheduled Ride"
+            },
+            {
+                "id": 2,
+                "name": "Rental"
+            },
+            {
+                "id": 3,
+                "name": "Book For Others"
+            }
+        ],
+        "booking-statuses": [
+            {
+                "id": 0,
+                "name": "Pending"
+            },
+            {
+                "id": 1,
+                "name": "Driver Assigned"
+            },
+            {
+                "id": 2,
+                "name": "Driver Accepted"
+            },
+            {
+                "id": 3,
+                "name": "Driver Arrived"
+            },
+            {
+                "id": 4,
+                "name": "Started"
+            },
+            {
+                "id": 5,
+                "name": "Ended"
+            },
+            {
+                "id": 6,
+                "name": "Completed"
+            },
+            {
+                "id": 7,
+                "name": "Cancelled"
+            }
+        ],
+        "payment-methods": [
+            {
+                "id": 0,
+                "name": "Green Coin"
+            },
+            {
+                "id": 1,
+                "name": "Paystack"
+            },
+            {
+                "id": 3,
+                "name": "Card"
+            }
+        ],
+        "emergency-types": [
+            {
+                "id": 0,
+                "name": "Electrical"
+            },
+            {
+                "id": 2,
+                "name": "Mechanical"
+            },
+            {
+                "id": 1,
+                "name": "Accident"
+            },
+            {
+                "id": 3,
+                "name": "Life Threat"
+            },
+            {
+                "id": 4,
+                "name": "Misconduct"
+            }
+        ],
+        "support-departments": [
+            {
+                "id": 0,
+                "name": "General Knowledge Support"
+            },
+            {
+                "id": 1,
+                "name": "Billing Support"
+            },
+            {
+                "id": 2,
+                "name": "Technical Support"
+            }
+        ],
+        "ticket-statuses": [
+            {
+                "id": 0,
+                "name": "Pending"
+            },
+            {
+                "id": 1,
+                "name": "Open"
+            },
+            {
+                "id": 2,
+                "name": "Closed"
+            }
+        ],
+        "max_file_size": 100,
+        "accepted_file_extensions": "png,jpg,jpeg,mp4",
+        "weather_api_key": "0b31768362224f079c4133922241002",
+        "banners": [
+            {
+                "media": {
+                    "id": 292,
+                    "media_type": "Image",
+                    "file": "/media/image/white-car-right-edited.png",
+                    "updated_at": "10/10/2024 14:17"
+                },
+                "title": "Test 1",
+                "description": "hahahaha",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 1
+            },
+            {
+                "media": {
+                    "id": 276,
+                    "media_type": "Image",
+                    "file": "/media/image/green-car-right.png",
+                    "updated_at": "10/10/2024 13:00"
+                },
+                "title": "Test 2",
+                "description": "hehehe",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 2
+            },
+            {
+                "media": {
+                    "id": 277,
+                    "media_type": "Image",
+                    "file": "/media/image/black-suv-right.png",
+                    "updated_at": "10/10/2024 13:00"
+                },
+                "title": "Test 3",
+                "description": "hihihi",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 3
+            },
+            {
+                "media": {
+                    "id": 278,
+                    "media_type": "Image",
+                    "file": "/media/image/un-global-compact.png",
+                    "updated_at": "10/10/2024 13:08"
+                },
+                "title": "UN Global Impact",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 4
+            },
+            {
+                "media": {
+                    "id": 281,
+                    "media_type": "Image",
+                    "file": "/media/image/green-world.png",
+                    "updated_at": "10/10/2024 13:24"
+                },
+                "title": "Renewable Energy",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 5
+            },
+            {
+                "media": {
+                    "id": 288,
+                    "media_type": "Image",
+                    "file": "/media/image/first-bank-stacked.png",
+                    "updated_at": "10/10/2024 14:06"
+                },
+                "title": "First Bank",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 6
+            },
+            {
+                "media": {
+                    "id": 282,
+                    "media_type": "Image",
+                    "file": "/media/image/zenith-bank_hcUmvBT.png",
+                    "updated_at": "10/10/2024 13:33"
+                },
+                "title": "Zenith Bank",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 7
+            },
+            {
+                "media": {
+                    "id": 285,
+                    "media_type": "Image",
+                    "file": "/media/image/afrexim-bank.png",
+                    "updated_at": "10/10/2024 13:46"
+                },
+                "title": "Afrexim Bank",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 8
+            },
+            {
+                "media": {
+                    "id": 287,
+                    "media_type": "Image",
+                    "file": "/media/image/stanbic.png",
+                    "updated_at": "10/10/2024 14:04"
+                },
+                "title": "Stanbic Bank",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 9
+            },
+            {
+                "media": {
+                    "id": 289,
+                    "media_type": "Image",
+                    "file": "/media/image/fcmb.png",
+                    "updated_at": "10/10/2024 14:09"
+                },
+                "title": "FCMB",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 10
+            },
+            {
+                "media": {
+                    "id": 602,
+                    "media_type": "Image",
+                    "file": "/media/image/access-bank-plc-logo-png_seeklogo-492413.png",
+                    "updated_at": "13/04/2025 14:09"
+                },
+                "title": "Access Bank",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 11
+            },
+            {
+                "media": {
+                    "id": 286,
+                    "media_type": "Image",
+                    "file": "/media/image/ecl.png",
+                    "updated_at": "10/10/2024 13:52"
+                },
+                "title": "Energy Culture",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 12
+            },
+            {
+                "media": {
+                    "id": 290,
+                    "media_type": "Image",
+                    "file": "/media/image/pwc.png",
+                    "updated_at": "10/10/2024 14:12"
+                },
+                "title": "PWC",
+                "description": "",
+                "link": {
+                    "text": "",
+                    "url": ""
+                },
+                "position": 13
+            }
+        ],
+        "cancellation-reasons": [
+            {
+                "id": 0,
+                "name": "Long pick-up time"
+            },
+            {
+                "id": 1,
+                "name": "Car doesn't match details on the app"
+            },
+            {
+                "id": 2,
+                "name": "Accidental Request"
+            },
+            {
+                "id": 3,
+                "name": "Wrong location details"
+            },
+            {
+                "id": 4,
+                "name": "Fare too high"
+            }
+        ],
+        "vehicle-types": [
+            {
+                "id": 2,
+                "name": "eDryv Plus",
+                "allow_ride": false,
+                "ride_per_km": 1346.2,
+                "ride_per_min": 243.05,
+                "ride_base_fare": 1000.0,
+                "allow_rental": true,
+                "rental_per_hour": 14583.0,
+                "rental_per_day": 180000.0,
+                "rental_contingency": 20000.0,
+                "number_of_passengers": 7,
+                "number_of_bags": 5,
+                "max_weight": 20,
+                "published": true,
+                "image": {
+                    "id": 115,
+                    "media_type": "Image",
+                    "file": "/media/image/IMG-20231102-WA0022-removebg-preview_1_KPcwoiI.png",
+                    "updated_at": "08/03/2024 20:22"
+                }
+            },
+            {
+                "id": 1,
+                "name": "eDryv Comfort",
+                "allow_ride": true,
+                "ride_per_km": 290.0,
+                "ride_per_min": 30.0,
+                "ride_base_fare": 1000.0,
+                "allow_rental": true,
+                "rental_per_hour": 8333.33,
+                "rental_per_day": 100000.0,
+                "rental_contingency": 10000.0,
+                "number_of_passengers": 4,
+                "number_of_bags": 2,
+                "max_weight": 15,
+                "published": true,
+                "image": {
+                    "id": 111,
+                    "media_type": "Image",
+                    "file": "/media/image/IMG-20231102-WA0005-removebg-preview_JdcGRsW.png",
+                    "updated_at": "07/03/2024 01:33"
+                }
+            }
+        ],
+        "open-time": "06:00",
+        "close-time": "22:59",
+        "ad-statuses": [
+            {
+                "id": 0,
+                "name": "Pending"
+            },
+            {
+                "id": 1,
+                "name": "Approved"
+            },
+            {
+                "id": 2,
+                "name": "Paid"
+            },
+            {
+                "id": 3,
+                "name": "Expired"
+            },
+            {
+                "id": 4,
+                "name": "Rejected"
+            }
+        ],
+        "paystack_public_key": "pk_live_4da0552977dfd88fb887f781e107c5fd0e354e25",
+        "ad_seconds_per_slot": 10,
+        "ad_price_per_slot_per_day": 178.57
+    },
+    "target": "dashboard",
+    "action": "get",
+    "which": null
+}
