@@ -10,7 +10,7 @@ app.use(bodyParser.json());
 const ocppServer = new OcppServer(9220);
 
 // Define API routes
-app.get('/api/chargers', (req, res) => {
+app.get('/', (req, res) => {
   const chargers = Array.from(ocppServer.chargers.keys());
   res.json({ 
     count: chargers.length,
