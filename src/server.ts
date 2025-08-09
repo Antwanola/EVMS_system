@@ -1,13 +1,19 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import { OcppServer } from './ocpp/ocpp_server';
+import http from 'http';
+
+
 
 // Create an Express application for the REST API
 const app = express();
 app.use(bodyParser.json());
 
+
+export const web_server = http.createServer(app)
+
 // Initialize the OCPP server
-const ocppServer = new OcppServer(9220);
+const ocppServer = new OcppServer(web_server);
 
 // Define API routes
 app.get('/', (req, res) => {
@@ -202,7 +208,7 @@ app.post('/api/chargers/:chargerId/trigger', (req, res) => {
 
 // Start the API server
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+web_server.listen(PORT, () => {
   console.log(`API server running on port ${PORT}`);
 });
 

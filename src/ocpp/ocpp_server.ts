@@ -1,5 +1,9 @@
 import * as WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import {web_server} from "../server"
+import { Server as HttpServer } from 'http';
+
+
 
 // Types for OCPP messages
 type OcppMessageType = 2 | 3 | 4; // 2=Call, 3=CallResult, 4=CallError
@@ -17,10 +21,10 @@ export class OcppServer {
   public chargers: Map<string, WebSocket> = new Map();
   private pendingRequests: Map<string, { action: string, timestamp: number }> = new Map();
 
-  constructor(port: number) {
+  constructor(server: HttpServer ) {
 
-    this.server = new WebSocket.Server({ port });
-    console.log(`OCPP Server started on port ${port}`);
+    this.server = new WebSocket.Server({ server });
+    console.log(`OCPP Server started on port ${server}`);
     
     this.init();
   }
