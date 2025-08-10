@@ -23,7 +23,7 @@ export class OcppServer {
   constructor(server: HttpServer ) {
 
     this.server = new WebSocket.Server({ server });
-    console.log(`OCPP Server started on port ${server}`);
+    console.log(`OCPP Server started on port ${server.address()}`);
     
     this.init();
   }
