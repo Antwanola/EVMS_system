@@ -1,6 +1,5 @@
 import * as WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import {web_server} from "../server"
 import { Server as HttpServer } from 'http';
 
 
@@ -229,7 +228,7 @@ export class OcppServer {
     
     const response = {
       status: 'Accepted', // Can be 'Accepted', 'Pending', or 'Rejected'
-      currentTime: new Date().toLocaleDateString('en-us', dateOption),
+      currentTime: new Date().toISOString(),   //new Date().toLocaleDateString('en-us', dateOption),
       interval: 300 // Heartbeat interval in seconds
     };
     this.sendCallResult(chargerId, uniqueId, response);
