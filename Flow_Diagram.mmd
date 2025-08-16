@@ -1,0 +1,29 @@
+flowchart TD
+    %% Styling definitions
+    classDef station fill:#f9a825,stroke:#333,stroke-width:2px,color:#fff
+    classDef gateway fill:#2196f3,stroke:#333,stroke-width:2px,color:#fff
+    classDef message fill:#90caf9,stroke:#333,stroke-width:1px,color:#000
+    classDef db fill:#8bc34a,stroke:#333,stroke-width:2px,color:#fff
+    classDef api fill:#4caf50,stroke:#333,stroke-width:1px,color:#fff
+    classDef control fill:#ef5350,stroke:#333,stroke-width:1px,color:#fff
+
+    %% Nodes
+    A["Charge Station (Central Unit) - Controls 8 Connectors"]:::station -->|OCPP 1.6J WebSocket| B["Gateway / Central System"]:::gateway
+
+    subgraph Message_Handling["Message Handling Layer"]
+        B1["BootNotification - Register station, init states"]:::message
+        B2["StatusNotification - Update connector state in DB"]:::message
+        B3["MeterValues - Store charging data in DB"]:::message
+        B4["Start/StopTransaction - Log session start/end"]:::message
+    end
+
+    B --> Message_Handling
+
+    Message_Handling --> C["Database Layer - Stores stations, states, logs, meter data"]:::db
+
+    C --> D1["Dashboard (Real-time View)"]:::api
+    C --> D2["Partner API (Third-party Access)"]:::api
+    C --> D3["Control API (Block/Unblock Guns)"]:::control
+
+    D3 --> E["ChangeAvailability Command - Operative/Inoperative"]:::control
+    E --> A
