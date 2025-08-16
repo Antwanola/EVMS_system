@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    container_name: ocpp_db
+    restart: always
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ocpp_user
+      POSTGRES_PASSWORD: ocpp_pass
+      POSTGRES_DB: ocpp_gateway
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
+    container_name: ocpp_gateway
+    restart: always
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    command: sh -c "npx prisma migrate deploy && npm run dev"
+
+volumes:
+  postgres_data:

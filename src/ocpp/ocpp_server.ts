@@ -23,7 +23,7 @@ export class OcppServer {
   constructor(server: HttpServer ) {
 
     this.server = new WebSocket.Server({ server });
-    console.log(`OCPP Server started on port ${server.address()}`);
+    console.log(`OCPP Server started on port ${this.server}`);
     
     this.init();
   }
@@ -41,6 +41,7 @@ export class OcppServer {
       }
 
       console.log(`Charger ${chargerId} connected`);
+      // ws.send(JSON.stringify([{ message: `Connected to OCPP server for charger ${chargerId}` }]));
       this.chargers.set(chargerId, ws);
 
       // Handle incoming messages from charger
@@ -214,6 +215,7 @@ export class OcppServer {
 
   private sendToCharger(chargerId: string, message: string) {
     const ws = this.chargers.get(chargerId);
+    console.log("Ready state: ",ws?.readyState)
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(message);
       console.log(`Sent to ${chargerId}:`, message);
@@ -236,7 +238,7 @@ export class OcppServer {
 
   private respondToHeartbeat(chargerId: string, uniqueId: string) {
     const response = {
-      currentTime: new Date().toLocaleDateString('en-us', dateOption)
+      currentTime: new Date().toISOString()
     };
     this.sendCallResult(chargerId, uniqueId, response);
   }
@@ -244,7 +246,7 @@ export class OcppServer {
   private respondToStatusNotification(chargerId: string, uniqueId: string, payload: any) {
     console.log(`StatusNotification from ${chargerId}:`, payload);
     // Simply acknowledge receipt
-    this.sendCallResult(chargerId, uniqueId, {});
+    this.sendCallResult(chargerId, uniqueId, {payload});
   }
 
   private respondToAuthorize(chargerId: string, uniqueId: string, payload: any) {
@@ -372,7 +374,6 @@ export class OcppServer {
     };
     return this.sendCall(chargerId, 'TriggerMessage', payload);
   }
-
   public sendDiagnosticsRequest(chargerId: string, location: string, retries: number = 0, retryInterval: number = 0) {
     const payload = {
       location,

@@ -183,7 +183,7 @@ app.get('/api/chargers/:chargerId/config', (req, res) => {
 
 app.post('/api/chargers/:chargerId/trigger', (req, res) => {
   const { chargerId } = req.params;
-  const { requestedMessage, connectorId = 0 } = req.body;
+  const { requestedMessage, connectorId } = req.body;
   
   if (!ocppServer.chargers.has(chargerId)) {
     return res.status(404).json({ error: `Charger ${chargerId} not found` });
