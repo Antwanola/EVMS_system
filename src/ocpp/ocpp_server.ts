@@ -138,6 +138,9 @@ export class OcppServer {
       case 'DataTransfer':
         this.respondToDataTransfer(chargerId, uniqueId, payload);
         break;
+        case 'ChangeConfiguration':
+          this.changeConfiguration(chargerId, payload.key, payload.value);
+          break;
       default:
         console.log(`Unhandled action: ${action}`);
         // Send a generic response
@@ -292,13 +295,23 @@ export class OcppServer {
     console.log(`Stopped transaction ${payload.transactionId} for ${chargerId}`);
   }
 
-  private respondToMeterValues(chargerId: string, uniqueId: string, payload: any) {
-    console.log(`MeterValues from ${chargerId}:`, payload);
-    // Process meter values here (store in database, etc.)
-    
-    // Simply acknowledge receipt
-    this.sendCallResult(chargerId, uniqueId, {});
+private respondToMeterValues(chargerId: string, uniqueId: string, payload: any) {
+  console.log(`⚡ MeterValues from ${chargerId}:`, JSON.stringify(payload, null, 2));
+
+  const { connectorId, transactionId, meterValue } = payload;
+
+  if (meterValue && Array.isArray(meterValue)) {
+    meterValue.forEach((entry: any) => {
+      const timestamp = entry.timestamp;
+      entry.sampledValue.forEach((sample: any) => {
+        console.log(
+          `Connector ${connectorId} | Tx ${transactionId} | ${sample.measurand || "Energy"}: ${sample.value} ${sample.unit || ""} at ${timestamp}`
+        );
+           });
+    });
   }
+}
+
 
   private respondToDiagnosticsStatusNotification(chargerId: string, uniqueId: string, payload: any) {
     console.log(`DiagnosticsStatusNotification from ${chargerId}:`, payload);
