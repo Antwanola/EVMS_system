@@ -138,9 +138,12 @@ export class OcppServer {
       case 'DataTransfer':
         this.respondToDataTransfer(chargerId, uniqueId, payload);
         break;
-        case 'ChangeConfiguration':
+      case 'ChangeConfiguration':
           this.changeConfiguration(chargerId, payload.key, payload.value);
           break;
+      case 'TriggerMessage': 
+        this.triggerMessage(chargerId, payload.requestedMessage, payload.connectorId);
+        break;
       default:
         console.log(`Unhandled action: ${action}`);
         // Send a generic response
@@ -385,6 +388,7 @@ private respondToMeterValues(chargerId: string, uniqueId: string, payload: any) 
       requestedMessage,
       connectorId
     };
+    console.log(payload, chargerId)
     return this.sendCall(chargerId, 'TriggerMessage', payload);
   }
   public sendDiagnosticsRequest(chargerId: string, location: string, retries: number = 0, retryInterval: number = 0) {
