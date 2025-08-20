@@ -48,7 +48,7 @@ export class APIGateway {
 //this.authenticateUser.bind(this),
     // Authentication routes
     this.router.post('/auth/login', this.login.bind(this));
-    this.router.post('/auth/register',  this.requireRole(['ADMIN']), this.register.bind(this));
+    this.router.post('/auth/register',  this.authenticateUser.bind(this),this.requireRole(['ADMIN']), this.register.bind(this));
     this.router.post('/auth/refresh', this.refreshToken.bind(this));
 
     // Charge point routes

@@ -1,5 +1,5 @@
 // src/services/database.ts
-import { PrismaClient, ChargePoint, Connector, Transaction, ChargingData, User, Alarm } from '@prisma/client';
+import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, ChargingData, User, Alarm } from '@prisma/client';
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
 import { UserWithRelations } from '../types/userWithRelations';
@@ -127,7 +127,7 @@ export class DatabaseService {
         chargePointId,
         connectorId,
         type: (data.type as any) || 'TYPE2',
-        status: (data.status as any) || 'AVAILABLE',
+        status: (data.status as any) || ConnectorStatus.AVAILABLE,
         ...data,
       },
     });
@@ -147,7 +147,7 @@ export class DatabaseService {
         },
       },
       data: {
-        status: status as any,
+        status: ConnectorStatus[status] || ConnectorStatus.AVAILABLE,
         errorCode,
         lastUpdated: new Date(),
         updatedAt: new Date(),
@@ -233,7 +233,7 @@ export class DatabaseService {
         chargePointId: data.chargePointId,
         connectorId: data.connectorId,
         gunType: data.gunType,
-        status: data.status,
+        status: ConnectorStatus[data.status] || ConnectorStatus.AVAILABLE,
         inputVoltage: data.inputVoltage,
         inputCurrent: data.inputCurrent,
         outputContactors: data.outputContactors,
