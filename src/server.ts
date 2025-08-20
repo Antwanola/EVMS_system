@@ -1,222 +1,107 @@
 import express from 'express';
-import bodyParser from 'body-parser';
-import { OcppServer } from './ocpp/ocpp_server';
-import http from 'http';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import cors from 'cors';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import { Logger } from './Utils/logger';
+import { OCPPServer } from './services/ocpp_server';
+import { APIGateway } from './services/api_gateway';
+import { DatabaseService } from './services/database';
+import { RedisService } from './services/redis';
 
+dotenv.config();
 
+const logger = Logger.getInstance();
 
-// Create an Express application for the REST API
-const app = express();
-app.use(bodyParser.json());
+class Application {
+  private app: express.Application;
+  private server: any;
+  private wss: WebSocketServer;
+  private ocppServer: OCPPServer;
+  private apiGateway: APIGateway;
+  private db: DatabaseService;
+  private redis: RedisService;
 
-
-export const web_server = http.createServer(app)
-
-// Initialize the OCPP server
-const ocppServer = new OcppServer(web_server);
-
-// Define API routes
-app.get('/', (req, res) => {
-  const chargers = Array.from(ocppServer.chargers.keys());
-  res.json({ 
-    count: chargers.length,
-    chargers: chargers.map(id => ({ id }))
-  });
-});
-
-app.get('/api/chargers/:chargerId', (req, res) => {
-  const { chargerId } = req.params;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
+  constructor() {
+    this.app = express();
+    this.server = createServer(this.app);
+    this.wss = new WebSocketServer({ server: this.server });
+    
+    this.db = new DatabaseService();
+    this.redis = new RedisService();
+    this.ocppServer = new OCPPServer(this.wss, this.db, this.redis);
+    this.apiGateway = new APIGateway(this.ocppServer, this.db);
   }
-  
-  res.json({ 
-    id: chargerId,
-    connected: true,
-    // In a real implementation, you would include more status information
-    // from your database or in-memory state
-  });
-});
 
-app.post('/api/chargers/:chargerId/start', (req, res) => {
-  const { chargerId } = req.params;
-  const { idTag, connectorId = 1 } = req.body;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
+  private setupMiddleware(): void {
+    this.app.use(helmet());
+    this.app.use(cors({
+      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['*'],
+      credentials: true
+    }));
+    this.app.use(express.json({ limit: '10mb' }));
+    this.app.use(express.urlencoded({ extended: true }));
   }
-  
-  if (!idTag) {
-    return res.status(400).json({ error: 'idTag is required' });
-  }
-  
-  try {
-    const requestId = ocppServer.remoteStartTransaction(chargerId, idTag, connectorId);
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `Start transaction requested for charger ${chargerId}, connector ${connectorId}, with idTag ${idTag}`
+
+  private setupRoutes(): void {
+    this.app.use('/api/v1', this.apiGateway.getRouter());
+    
+    this.app.get('/health', (req, res) => {
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        connectedChargePoints: this.ocppServer.getConnectedChargePoints().length
+      });
     });
-  } catch (error) {
-    console.error(`Error starting transaction:`, error);
-    res.status(500).json({ error: 'Failed to start transaction' });
   }
-});
 
-app.post('/api/chargers/:chargerId/stop', (req, res) => {
-  const { chargerId } = req.params;
-  const { transactionId } = req.body;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
+  private async initialize(): Promise<void> {
+    await this.db.connect();
+    await this.redis.connect();
+    
+    this.setupMiddleware();
+    this.setupRoutes();
+    
+    this.ocppServer.initialize();
+    
+    // Graceful shutdown
+    process.on('SIGTERM', this.shutdown.bind(this));
+    process.on('SIGINT', this.shutdown.bind(this));
   }
-  
-  if (!transactionId) {
-    return res.status(400).json({ error: 'transactionId is required' });
-  }
-  
-  try {
-    const requestId = ocppServer.remoteStopTransaction(chargerId, transactionId);
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `Stop transaction ${transactionId} requested for charger ${chargerId}`
+
+  private async shutdown(): Promise<void> {
+    logger.info('Shutting down server...');
+    
+    this.server.close(() => {
+      logger.info('HTTP server closed');
     });
-  } catch (error) {
-    console.error(`Error stopping transaction:`, error);
-    res.status(500).json({ error: 'Failed to stop transaction' });
-  }
-});
-
-app.post('/api/chargers/:chargerId/unlock', (req, res) => {
-  const { chargerId } = req.params;
-  const { connectorId = 1 } = req.body;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
-  }
-  
-  try {
-    const requestId = ocppServer.unlockConnector(chargerId, connectorId);
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `Unlock requested for charger ${chargerId}, connector ${connectorId}`
+    
+    this.wss.close(() => {
+      logger.info('WebSocket server closed');
     });
-  } catch (error) {
-    console.error(`Error unlocking connector:`, error);
-    res.status(500).json({ error: 'Failed to unlock connector' });
+    
+    await this.db.disconnect();
+    await this.redis.disconnect();
+    
+    process.exit(0);
   }
-});
 
-app.post('/api/chargers/:chargerId/reset', (req, res) => {
-  const { chargerId } = req.params;
-  const { type = 'Soft' } = req.body;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
-  }
-  
-  if (type !== 'Soft' && type !== 'Hard') {
-    return res.status(400).json({ error: 'type must be either "Soft" or "Hard"' });
-  }
-  
-  try {
-    const requestId = ocppServer.reset(chargerId, type);
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `${type} reset requested for charger ${chargerId}`
+  public async start(port: number = parseInt(process.env.PORT || '3000')): Promise<void> {
+    await this.initialize();
+    
+    this.server.listen(port, () => {
+      logger.info(`OCPP 1.6J Server running on port ${port}`);
+      logger.info(`WebSocket endpoint: ws://localhost:${port}/`);
+      logger.info(`API Gateway: http://localhost:${port}/api/v1`);
     });
-  } catch (error) {
-    console.error(`Error resetting charger:`, error);
-    res.status(500).json({ error: 'Failed to reset charger' });
   }
-});
+}
 
-app.post('/api/chargers/:chargerId/config', (req, res) => {
-  const { chargerId } = req.params;
-  const { key, value } = req.body;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
-  }
-  
-  if (!key || value === undefined) {
-    return res.status(400).json({ error: 'key and value are required' });
-  }
-  
-  try {
-    const requestId = ocppServer.changeConfiguration(chargerId, key, value.toString());
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `Configuration change requested for charger ${chargerId}: ${key}=${value}`
-    });
-  } catch (error) {
-    console.error(`Error changing configuration:`, error);
-    res.status(500).json({ error: 'Failed to change configuration' });
-  }
+// Start the application
+const app = new Application();
+app.start().catch((error) => {
+  Logger.getInstance().error('Failed to start server:', error);
+  process.exit(1);
 });
-
-app.get('/api/chargers/:chargerId/config', (req, res) => {
-  const { chargerId } = req.params;
-  const keys = req.query.keys ? (req.query.keys as string).split(',') : [];
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
-  }
-  
-  try {
-    const requestId = ocppServer.getConfiguration(chargerId, keys);
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `Configuration requested for charger ${chargerId}`
-    });
-  } catch (error) {
-    console.error(`Error getting configuration:`, error);
-    res.status(500).json({ error: 'Failed to get configuration' });
-  }
-});
-
-app.post('/api/chargers/:chargerId/trigger', (req, res) => {
-  const { chargerId } = req.params;
-  const { requestedMessage, connectorId } = req.body;
-  
-  if (!ocppServer.chargers.has(chargerId)) {
-    return res.status(404).json({ error: `Charger ${chargerId} not found` });
-  }
-  
-  if (!requestedMessage) {
-    return res.status(400).json({ error: 'requestedMessage is required' });
-  }
-  
-  try {
-    const requestId = ocppServer.triggerMessage(chargerId, requestedMessage, connectorId);
-    res.json({ 
-      success: true, 
-      requestId,
-      message: `Trigger message ${requestedMessage} requested for charger ${chargerId}, connector ${connectorId}`
-    });
-  } catch (error) {
-    console.error(`Error triggering message:`, error);
-    res.status(500).json({ error: 'Failed to trigger message' });
-  }
-});
-
-// Start the API server
-const PORT = process.env.PORT || 3001;
-web_server.listen(PORT, () => {
-  console.log(`API server running on port ${PORT}`);
-});
-
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  console.log('Shutting down API and OCPP servers');
-  ocppServer.shutdown();
-  process.exit(0);
-});
-
-export { app, ocppServer };
