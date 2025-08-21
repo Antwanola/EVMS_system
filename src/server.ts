@@ -9,6 +9,7 @@ import { OCPPServer } from './services/ocpp_server';
 import { APIGateway } from './services/api_gateway';
 import { DatabaseService } from './services/database';
 import { RedisService } from './services/redis';
+import { InitialSeed } from './newSeed';
 
 dotenv.config();
 
@@ -65,7 +66,8 @@ class Application {
     this.setupRoutes();
     
     this.ocppServer.initialize();
-    
+    await InitialSeed()
+
     // Graceful shutdown
     process.on('SIGTERM', this.shutdown.bind(this));
     process.on('SIGINT', this.shutdown.bind(this));

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
- async function InitialSeed() {
+export async function InitialSeed() {
   console.log('🌱 Seeding database...');
 
   // Create admin user
@@ -84,7 +84,7 @@ const adminPassword = await bcrypt.hash('admin123', 12);
   });
 
   console.log('✅ Database seeded successfully');
-  console.log('👤 Admin user created - username: admin, password: admin123');
+  console.log(`👤 Admin user created - username: antwanola29@gmail.com, password: admin123`);
   console.log('👤 Operator user created - username: operator, password: operator123');
   console.log('🔌 Sample charge point CP001 created with 2 connectors');
   console.log('🏷️ Sample RFID tags created: RFID001, RFID002, RFID003, TEST001');

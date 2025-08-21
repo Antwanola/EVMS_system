@@ -46,9 +46,10 @@ export class APIGateway {
     // Apply rate limiting middleware
     this.router.use(this.rateLimitMiddleware.bind(this));
 //this.authenticateUser.bind(this),
+//this.requireRole(['ADMIN']),
     // Authentication routes
     this.router.post('/auth/login', this.login.bind(this));
-    this.router.post('/auth/register',  this.authenticateUser.bind(this),this.requireRole(['ADMIN']), this.register.bind(this));
+    this.router.post('/auth/register',  this.register.bind(this));
     this.router.post('/auth/refresh', this.refreshToken.bind(this));
 
     // Charge point routes
@@ -112,6 +113,7 @@ export class APIGateway {
   private async authenticateUser(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '') || req.headers['x-api-key'] as string;
+      console.log(token)
       
       if (!token) {
         return this.sendErrorResponse(res, 401, 'Authentication required');
@@ -123,7 +125,8 @@ export class APIGateway {
       if (token.startsWith('eyJ')) {
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
-          user = await this.db.getUserByUsername(decoded.username);
+          console.log(`decoded: ${JSON.stringify(decoded)}`);
+          user = await this.db.getUserByEmail(decoded.email);
         } catch (error) {
           // Invalid JWT, continue to API key check
         }
@@ -158,7 +161,7 @@ export class APIGateway {
   // Authentication endpoints
   private async login(req: Request, res: Response): Promise<void> {
     const schema = Joi.object({
-      username: Joi.string().required(),
+      email: Joi.string().required(),
       password: Joi.string().required(),
     });
 
@@ -168,19 +171,21 @@ export class APIGateway {
     }
 
     try {
-      const user  = await this.db.getUserByUsername(value.username);
+      const user  = await this.db.getUserByEmail(value.email);
+      console.log(user)
       
       if (!user || !user.isActive) {
         return this.sendErrorResponse(res, 401, 'Invalid credentials');
       }
 
       const isPasswordValid = await bcrypt.compare(value.password, user.password);
+      console.log(isPasswordValid)
       if (!isPasswordValid) {
         return this.sendErrorResponse(res, 401, 'Invalid credentials');
       }
 
       const token = jwt.sign(
-        { id: user.id, username: user.username, role: user.role },
+        { id: user.id, email: user.email, role: user.role, username: user.username },
         process.env.JWT_SECRET!,
         { expiresIn: '24h' }
       );

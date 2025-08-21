@@ -323,9 +323,9 @@ export class DatabaseService {
     });
   }
 
-  public async getUserByUsername(username: string): Promise<UserWithRelations | null> {
+  public async getUserByEmail(email: string): Promise<UserWithRelations | null> {
     return this.prisma.user.findUnique({
-      where: { username },
+      where: { email },
       include: {
         permissions: true,
         chargePointAccess: true,

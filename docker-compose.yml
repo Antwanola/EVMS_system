@@ -9,6 +9,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - JWT_SECRET="secretkey123"
       - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ocpp
       - REDIS_URL=redis://redis:6379
