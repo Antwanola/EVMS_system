@@ -1,31 +1,83 @@
 #!/bin/bash
+set -e
 
-set -e  # Exit immediately if a command fails
+echo -e "\e[32m🚀 Starting OCPP Gateway...\e[0m"
 
-echo "🚀 Deploying OCPP Gateway to production..."
+# Stop any running containers
+echo -e "\e[33m🛑 Stopping existing containers...\e[0m"
+docker compose down --remove-orphans
 
-# Step 1: Pull latest code
-echo "📥 Pulling latest changes from main branch..."
-git pull origin main
+# Build and start containers
+echo -e "\e[36m🔨 Building and starting containers...\e[0m"
+docker compose up --build -d
 
-# Step 2: Stop current containers
-echo "🛑 Stopping old containers..."
-docker-compose down
+# Wait for containers to start
+echo -e "\e[33m⏳ Waiting for containers to start...\e[0m"
+sleep 15
 
-# Step 3: Build and start containers
-echo "🔨 Building and starting containers..."
-docker-compose up --build -d
+# Check if containers are running
+echo -e "\e[36m🔍 Checking container status...\e[0m"
+docker compose ps --format "table {{.Service}}\t{{.State}}"
 
-# Step 4: Wait for DB to be ready
-echo "⏳ Waiting for database to be ready..."
-sleep 5
+# Wait for database to be ready
+echo -e "\e[36m📦 Waiting for database and running Prisma migrations...\e[0m"
+echo -e "\e[90m   Checking database connectivity...\e[0m"
 
-# Step 5: Run migrations
-echo "📦 Running Prisma migrations..."
-docker exec -it ocpp_gateway npx prisma migrate deploy
+dbReady=false
+dbAttempts=0
+maxDbAttempts=30
 
-# Step 6: Cleanup unused images
-echo "🧹 Cleaning up unused Docker images..."
-docker image prune -f
+while [ $dbAttempts -lt $maxDbAttempts ]; do
+    dbAttempts=$((dbAttempts+1))
+    echo -e "\e[90m   Database check attempt $dbAttempts/$maxDbAttempts...\e[0m"
 
-echo "✅ Deployment completed! App is live."
+    if docker compose exec -T postgres pg_isready -U postgres -d ocpp > /dev/null 2>&1; then
+        echo -e "\e[32m✅ Database is ready!\e[0m"
+        dbReady=true
+        break
+    fi
+    sleep 2
+done
+
+if [ "$dbReady" = false ]; then
+    echo -e "\e[31m❌ Database failed to become ready\e[0m"
+    docker compose logs postgres
+    exit 1
+fi
+
+# Run Prisma migrations with retries
+maxAttempts=5
+attempt=1
+while [ $attempt -le $maxAttempts ]; do
+    echo -e "\e[90m   Migration attempt $attempt/$maxAttempts...\e[0m"
+    
+    if docker compose exec -T ocpp-server npx prisma migrate deploy; then
+        echo -e "\e[32m✅ Prisma migrations completed successfully!\e[0m"
+        break
+    else
+        echo -e "\e[33m⚠️  Migration attempt $attempt failed, retrying...\e[0m"
+        sleep 5
+        attempt=$((attempt+1))
+    fi
+done
+
+if [ $attempt -gt $maxAttempts ]; then
+    echo -e "\e[31m❌ Prisma migrations failed after $maxAttempts attempts\e[0m"
+    echo -e "\e[33m📋 App container logs:\e[0m"
+    docker compose logs ocpp-server
+    exit 1
+fi
+
+# Final status check
+echo ""
+echo -e "\e[32m✅ OCPP Gateway is up and running!\e[0m"
+echo -e "\e[36m🌐 Access your application at: http://localhost:3000\e[0m"
+echo ""
+echo -e "\e[36m📊 Final Container Status:\e[0m"
+docker compose ps
+echo ""
+echo -e "\e[90m📋 Useful Commands:\e[0m"
+echo -e "\e[90m   🔍 View all logs: docker compose logs -f\e[0m"
+echo -e "\e[90m   🔍 View app logs: docker compose logs -f ocpp-server\e[0m"
+echo -e "\e[90m   🛑 Stop services: docker compose down\e[0m"
+echo -e "\e[90m   🔄 Restart app: docker compose restart ocpp-server\e[0m"
