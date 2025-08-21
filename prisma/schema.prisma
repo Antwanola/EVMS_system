@@ -1,12 +1,7 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
+// prisma/schema.prisma
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -14,47 +9,348 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Station {
-  id            String    @id @default(uuid())
-  ocppId        String
-  name          String
-  location      String?
-  status        String
-  lastHeartbeat DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  guns          Gun[]
+model ChargePoint {
+  id                   String    @id
+  name                 String?
+  vendor               String
+  model                String
+  serialNumber         String?
+  firmwareVersion      String?
+  iccid                String?
+  imsi                 String?
+  meterType            String?
+  meterSerialNumber    String?
+  isOnline             Boolean   @default(false)
+  lastSeen             DateTime?
+  heartbeatInterval    Int       @default(300)
+  bootNotificationSent Boolean   @default(false)
+  location             String?
+  description          String?
+
+  // Relationships
+  connectors     Connector[]
+  transactions   Transaction[]
+  chargingData   ChargingData[]
+  configurations ChargePointConfiguration[]
+  alarms         Alarm[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("charge_points")
 }
 
-model Gun {
-  id               String   @id @default(uuid())
-  stationId        String
-  connectorNumber  Int
-  status           String
-  blocked          Boolean  @default(false)
-  lastStatusChange DateTime @default(now())
-  meterValue       Float?
-  station          Station  @relation(fields: [stationId], references: [id])
-}
+model Connector {
+  id              Int             @id @default(autoincrement())
+  chargePointId   String
+  connectorId     Int
+  type            ConnectorType   @default(TYPE2)
+  status          ConnectorStatus @default(AVAILABLE)
+  errorCode       String?
+  info            String?
+  vendorId        String?
+  vendorErrorCode String?
+  maxPower        Float?
 
-model OcppLog {
-  id          String   @id @default(uuid())
-  stationId   String
-  gunId       String
-  messageType String
-  action      String
-  payload     Json
-  timestamp   DateTime @default(now())
+  // Current real-time data
+  inputVoltage     Float   @default(0)
+  inputCurrent     Float   @default(0)
+  outputContactors Boolean @default(false)
+  outputVoltage    Float   @default(0)
+  outputEnergy     Float   @default(0)
+  chargingEnergy   Float   @default(0)
+  gunTemperature   Float   @default(25)
+  stateOfCharge    Float   @default(0)
+  chargeTime       Int     @default(0) // in seconds
+  remainingTime    Int     @default(0) // in seconds
+  demandCurrent    Float   @default(0)
+  connected        Boolean @default(false)
+
+  lastUpdated DateTime @default(now())
+
+  // Relationships
+  chargePoint  ChargePoint    @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  chargingData ChargingData[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([chargePointId, connectorId])
+  @@map("connectors")
 }
 
 model Transaction {
-  id         String    @id @default(uuid())
-  stationId  String
-  gunId      String
-  startTime  DateTime
-  endTime    DateTime?
-  startMeter Float
-  endMeter   Float?
-  totalKwh   Float?
-  status     String
+  id             Int         @id @default(autoincrement())
+  transactionId  Int         @unique
+  chargePointId  String
+  connectorId    Int
+  idTag          String
+  meterStart     Float
+  meterStop      Float?
+  startTimestamp DateTime
+  stopTimestamp  DateTime?
+  stopReason     StopReason?
+  reservationId  Int?
+
+  // Relationships
+  chargePoint ChargePoint  @relation(fields: [chargePointId], references: [id])
+  connector   Connector    @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
+  meterValues MeterValue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("transactions")
+}
+
+model ChargingData {
+  id            String @id @default(cuid())
+  chargePointId String
+  connectorId   Int
+  transactionId Int?
+
+  // All the real-time data points you requested
+  gunType          ConnectorType
+  status           ConnectorStatus
+  inputVoltage     Float
+  inputCurrent     Float
+  outputContactors Boolean
+  outputVoltage    Float
+  outputEnergy     Float
+  chargingEnergy   Float
+  alarm            String?
+  stopReason       StopReason?
+  connected        Boolean
+  gunTemperature   Float
+  stateOfCharge    Float
+  chargeTime       Int // in seconds
+  remainingTime    Int // in seconds
+  demandCurrent    Float
+
+  timestamp DateTime @default(now())
+
+  // Relationships
+  chargePoint ChargePoint @relation(fields: [chargePointId], references: [id])
+  connector   Connector   @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
+
+  @@index([chargePointId, timestamp])
+  @@index([connectorId, timestamp])
+  @@map("charging_data")
+}
+
+model MeterValue {
+  id            String   @id @default(cuid())
+  transactionId Int?
+  connectorId   Int
+  chargePointId String
+  timestamp     DateTime
+
+  // Sampled values
+  sampledValues SampledValue[]
+
+  // Relationship
+  transaction Transaction? @relation(fields: [transactionId], references: [transactionId])
+
+  createdAt DateTime @default(now())
+
+  @@map("meter_values")
+}
+
+model SampledValue {
+  id           String  @id @default(cuid())
+  meterValueId String
+  value        String
+  context      String?
+  format       String?
+  measurand    String?
+  phase        String?
+  location     String?
+  unit         String?
+
+  // Relationship
+  meterValue MeterValue @relation(fields: [meterValueId], references: [id], onDelete: Cascade)
+
+  @@map("sampled_values")
+}
+
+model User {
+  id       String   @id @default(cuid())
+  username String   @unique
+  email    String   @unique
+  password String
+  role     UserRole @default(VIEWER)
+  apiKey   String?  @unique
+  isActive Boolean  @default(true)
+
+  // Permissions
+  permissions       Permission[]
+  chargePointAccess ChargePointAccess[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  userId   String
+  resource String // e.g., 'charge_points', 'transactions', 'users'
+  action   String // e.g., 'read', 'write', 'delete', 'control'
+
+  // Relationship
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resource, action])
+  @@map("permissions")
+}
+
+model ChargePointAccess {
+  id            String      @id @default(cuid())
+  userId        String
+  chargePointId String
+  accessLevel   AccessLevel @default(READ)
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chargePointId])
+  @@map("charge_point_access")
+}
+
+model ChargePointConfiguration {
+  id            String  @id @default(cuid())
+  chargePointId String
+  key           String
+  value         String
+  readonly      Boolean @default(false)
+
+  // Relationship
+  chargePoint ChargePoint @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+
+  @@unique([chargePointId, key])
+  @@map("charge_point_configurations")
+}
+
+model Alarm {
+  id            String        @id @default(cuid())
+  chargePointId String
+  connectorId   Int?
+  alarmType     String
+  severity      AlarmSeverity
+  message       String
+  resolved      Boolean       @default(false)
+  resolvedAt    DateTime?
+  resolvedBy    String?
+
+  // Relationship
+  chargePoint ChargePoint @relation(fields: [chargePointId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("alarms")
+}
+
+model IdTag {
+  id          String      @id @default(cuid())
+  idTag       String      @unique
+  parentIdTag String?
+  status      IdTagStatus @default(ACCEPTED)
+  expiryDate  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("id_tags")
+}
+
+// Enums
+enum ConnectorType {
+  CCS
+  CHAdeMO
+  TYPE2
+  TYPE1
+  TESLA
+
+  @@map("connector_type")
+}
+
+enum ConnectorStatus {
+  AVAILABLE
+  PREPARING
+  CHARGING
+  SUSPENDED_EVSE
+  SUSPENDED_EV
+  FINISHING
+  RESERVED
+  UNAVAILABLE
+  FAULTED
+
+  @@map("connector_status")
+}
+
+enum StopReason {
+  EMERGENCY_STOP
+  EV_DISCONNECTED
+  HARD_RESET
+  LOCAL
+  OTHER
+  POWER_LOSS
+  REBOOT
+  REMOTE
+  SOFT_RESET
+  UNLOCK_COMMAND
+  DE_AUTHORIZED
+  ENERGY_LIMIT_REACHED
+  GROUND_FAULT
+  IMMEDIATE_RESET
+  LOCAL_OUT_OF_CREDIT
+  MASTER_PASS
+  OVERCURRENT_FAULT
+  POWER_QUALITY
+  SOC_LIMIT_REACHED
+  STOPPED_BY_EV
+  TIME_LIMIT_REACHED
+  TIMEOUT
+
+  @@map("stop_reason")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+  THIRD_PARTY
+
+  @@map("user_role")
+}
+
+enum AccessLevel {
+  READ
+  WRITE
+  CONTROL
+  ADMIN
+
+  @@map("access_level")
+}
+
+enum AlarmSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+
+  @@map("alarm_severity")
+}
+
+enum IdTagStatus {
+  ACCEPTED
+  BLOCKED
+  EXPIRED
+  INVALID
+  CONCURRENT_TX
+
+  @@map("id_tag_status")
 }
