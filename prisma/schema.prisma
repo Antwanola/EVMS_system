@@ -152,7 +152,7 @@ model MeterValue {
   location      String?
   unit          String
   connectorId   Int?
-  // chargePointId String?
+  chargePointId String?
   // Sampled values
   sampledValues SampledValue[]
 
