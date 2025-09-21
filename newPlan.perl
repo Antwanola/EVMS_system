@@ -18,3 +18,11 @@ src/
 prisma/
 ├── schema.prisma            # Database schema
 └── seed.ts                  # Database seeding
+
+
+
+
+
+smartcash
+8029050270
+ifayin

@@ -44,12 +44,14 @@ export type StopReason =
   | 'TIME_LIMIT_REACHED'
   | 'TIMEOUT';
 
-export type ConnectorType = 
-  | 'CCS'
-  | 'CHAdeMO'
-  | 'TYPE2'
-  | 'TYPE1'
-  | 'TESLA';
+export enum ConnectorType {
+  CSS = 'CCS',
+  CHAdeMO = 'CHAdeMO',
+  TYPE2 = 'TYPE2',
+  TYPE1 = 'TYPE1',
+  TESLA = 'TESLA',
+  GBT = 'GBT'
+}
 
 
 export interface ChargingStationData {
@@ -224,8 +226,30 @@ export interface ChargePointConnection {
   bootNotificationSent: boolean;
   heartbeatInterval: number;
   currentData: ChargingStationData;
+  connectors: Map<number, ChargingStationData>; // Changed from single currentData
+  numberOfConnectors?: number; // Track total connectors
+  meters?: Map<string, MeterData>; // Meter ID -> Meter readings
+  meterConfiguration?: MeterConfiguration;
 }
 
+
+interface MeterData {
+  meterId: string;
+  connectorId?: number; // Which connector this meter serves (optional)
+  location: 'Inlet' | 'Outlet' | 'EV' | 'Body' | 'Cable';
+  measurements: Map<string, MeterMeasurement>; // Measurand -> latest value
+  lastUpdated: Date;
+}
+
+interface MeterMeasurement {
+  measurand: string; // 'Voltage', 'Current.Import', 'Energy.Active.Import.Register', etc.
+  value: number;
+  unit?: string;
+  phase?: 'L1' | 'L2' | 'L3' | 'N';
+  location?: 'Inlet' | 'Outlet' | 'EV' | 'Body' | 'Cable';
+  context?: 'Interruption.Begin' | 'Interruption.End' | 'Sample.Clock' | 'Sample.Periodic' | 'Transaction.Begin' | 'Transaction.End' | 'Trigger';
+  timestamp: Date;
+}
 // API Gateway interfaces
 export interface APIUser {
   id: string;
@@ -234,6 +258,12 @@ export interface APIUser {
   permissions: string[];
   apiKey?: string;
   chargePointAccess?: string[];
+}
+
+interface MeterConfiguration {
+  supportedMeasurands: string[];
+  samplingInterval: number;
+  meteringPerTransaction: boolean;
 }
 
 export interface APIResponse<T = any> {

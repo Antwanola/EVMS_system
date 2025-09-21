@@ -3,6 +3,7 @@ import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, Cha
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
 import { UserWithRelations } from '../types/userWithRelations';
+import { schemas } from '../middleware/validation';
 
 export class DatabaseService {
   private prisma: PrismaClient;
@@ -139,19 +140,28 @@ export class DatabaseService {
     status: ChargePointStatus,
     errorCode?: string
   ): Promise<void> {
-    await this.prisma.connector.update({
+    const normalisedStatus = status.toUpperCase() as ChargePointStatus
+    await this.prisma.connector.upsert({
       where: {
         chargePointId_connectorId: {
           chargePointId,
           connectorId,
         },
       },
-      data: {
-        status: ConnectorStatus[status] || ConnectorStatus.AVAILABLE,
+      update: {
+        status: ConnectorStatus[normalisedStatus] || ConnectorStatus.AVAILABLE,
         errorCode,
         lastUpdated: new Date(),
         updatedAt: new Date(),
       },
+      create: {
+      chargePointId,
+      connectorId,
+      type: ConnectorType.TYPE2, // or infer from station if available
+      status: ConnectorStatus[normalisedStatus] || ConnectorStatus.AVAILABLE,
+      errorCode,
+      lastUpdated: new Date(),
+    },
     });
   }
 

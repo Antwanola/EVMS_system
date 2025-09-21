@@ -1,7 +1,9 @@
 // src/handlers/ocpp-message-handler.ts
-import  { Logger }  from '../Utils/logger';
-import { DatabaseService } from '../services/database';
-import { RedisService } from '../services/redis';
+import { CallTracker } from "assert";
+import { Logger } from "../Utils/logger";
+import { DatabaseService } from "../services/database";
+import { RedisService } from "../services/redis";
+import { MeterValue } from "../types/ocpp_types";
 import {
   OCPPMessage,
   MessageType,
@@ -18,35 +20,46 @@ import {
   StopTransactionRequest,
   StopTransactionResponse,
   AuthorizeRequest,
-  AuthorizeResponse
-} from '../types/ocpp_types';
+  AuthorizeResponse,
+} from "../types/ocpp_types";
 
 export class OCPPMessageHandler {
   private logger = Logger.getInstance();
-  private pendingCalls = new Map<string, { resolve: Function; timeout: NodeJS.Timeout }>();
+  private pendingCalls = new Map<
+    string,
+    {
+      resolve: (data: any) => void;
+      reject: (err: any) => void;
+      timeout: NodeJS.Timeout;
+    }
+  >();
 
-  constructor(
-    private db: DatabaseService,
-    private redis: RedisService
-  ) {}
+  constructor(private db: DatabaseService, private redis: RedisService) {}
 
   public async handleMessage(
     chargePointId: string,
     message: OCPPMessage,
     connection: ChargePointConnection
   ): Promise<any> {
-    const [messageTypeId, uniqueId, actionOrErrorCode, payload] = message as any;
+    const [messageTypeId, uniqueId, actionOrErrorCode, payload] =
+      message as any;
 
     switch (messageTypeId) {
       case MessageType.CALL:
-        return this.handleCall(chargePointId, uniqueId, actionOrErrorCode, payload, connection);
-      
+        return this.handleCall(
+          chargePointId,
+          uniqueId,
+          actionOrErrorCode,
+          payload,
+          connection
+        );
+
       case MessageType.CALLRESULT:
         return this.handleCallResult(uniqueId, actionOrErrorCode);
-      
+
       case MessageType.CALLERROR:
         return this.handleCallError(uniqueId, actionOrErrorCode, payload);
-      
+
       default:
         this.logger.error(`Unknown message type: ${messageTypeId}`);
         return null;
@@ -64,63 +77,99 @@ export class OCPPMessageHandler {
       let response: any;
 
       switch (action) {
-        case 'BootNotification':
-          response = await this.handleBootNotification(chargePointId, payload, connection);
+        case "BootNotification":
+          response = await this.handleBootNotification(
+            chargePointId,
+            payload,
+            connection
+          );
           break;
-        
-        case 'Heartbeat':
+
+        case "Heartbeat":
           response = await this.handleHeartbeat(chargePointId, connection);
           break;
-        
-        case 'StatusNotification':
-          response = await this.handleStatusNotification(chargePointId, payload, connection);
+
+        case "StatusNotification":
+          response = await this.handleStatusNotification(
+            chargePointId,
+            payload,
+            connection
+          );
           break;
-        
-        case 'MeterValues':
-          response = await this.handleMeterValues(chargePointId, payload, connection);
+
+        case "MeterValues":
+          response = await this.handleMeterValues(
+            chargePointId,
+            payload,
+            connection
+          );
           break;
-        
-        case 'StartTransaction':
-          response = await this.handleStartTransaction(chargePointId, payload, connection);
+
+        case "StartTransaction":
+          response = await this.handleStartTransaction(
+            chargePointId,
+            payload,
+            connection
+          );
           break;
-        
-        case 'StopTransaction':
-          response = await this.handleStopTransaction(chargePointId, payload, connection);
+
+        case "StopTransaction":
+          response = await this.handleStopTransaction(
+            chargePointId,
+            payload,
+            connection
+          );
           break;
-        
-        case 'Authorize':
-          response = await this.handleAuthorize(chargePointId, payload, connection);
+
+        case "Authorize":
+          response = await this.handleAuthorize(
+            chargePointId,
+            payload,
+            connection
+          );
           break;
-        
+
         default:
           this.logger.warn(`Unhandled action: ${action}`);
-          return [MessageType.CALLERROR, uniqueId, 'NotSupported', `Action ${action} not supported`, {}];
+          return [
+            MessageType.CALLERROR,
+            uniqueId,
+            "NotSupported",
+            `Action ${action} not supported`,
+            {},
+          ];
       }
 
       return [MessageType.CALLRESULT, uniqueId, response];
     } catch (error) {
       this.logger.error(`Error handling ${action}:`, error);
-      return [MessageType.CALLERROR, uniqueId, 'InternalError', 'Internal server error', {}];
+      return [
+        MessageType.CALLERROR,
+        uniqueId,
+        "InternalError",
+        "Internal server error",
+        {},
+      ];
     }
   }
 
-  private handleCallResult(uniqueId: string, payload: any): void {
-    const pendingCall = this.pendingCalls.get(uniqueId);
-    if (pendingCall) {
-      clearTimeout(pendingCall.timeout);
-      pendingCall.resolve(payload);
-      this.pendingCalls.delete(uniqueId);
-    }
+private handleCallResult(uniqueId: string, payload: any): void {
+  const pendingCall = this.pendingCalls.get(uniqueId);
+  if (pendingCall) {
+    clearTimeout(pendingCall.timeout);
+    pendingCall.resolve(payload);
+    this.pendingCalls.delete(uniqueId);
   }
+}
 
-  private handleCallError(uniqueId: string, errorCode: string, errorDescription: string): void {
-    const pendingCall = this.pendingCalls.get(uniqueId);
-    if (pendingCall) {
-      clearTimeout(pendingCall.timeout);
-      pendingCall.resolve({ error: errorCode, description: errorDescription });
-      this.pendingCalls.delete(uniqueId);
-    }
+private handleCallError(uniqueId: string, errorCode: string, errorDescription: string): void {
+  const pendingCall = this.pendingCalls.get(uniqueId);
+  if (pendingCall) {
+    clearTimeout(pendingCall.timeout);
+    pendingCall.reject(new Error(`${errorCode}: ${errorDescription}`));
+    this.pendingCalls.delete(uniqueId);
   }
+}
 
   private async handleBootNotification(
     chargePointId: string,
@@ -144,15 +193,15 @@ export class OCPPMessageHandler {
 
     // Create default connector if it doesn't exist
     await this.db.createOrUpdateConnector(chargePointId, 1, {
-      type: 'TYPE2',
-      status: 'AVAILABLE',
+      type: "TYPE2",
+      status: "AVAILABLE",
     });
 
     connection.bootNotificationSent = true;
     connection.heartbeatInterval = 300; // 5 minutes
 
     return {
-      status: 'Accepted',
+      status: "Accepted",
       currentTime: new Date().toISOString(),
       interval: connection.heartbeatInterval,
     };
@@ -164,7 +213,7 @@ export class OCPPMessageHandler {
   ): Promise<HeartbeatResponse> {
     // Update last seen timestamp
     await this.db.updateChargePointStatus(chargePointId, true);
-    
+
     return {
       currentTime: new Date().toISOString(),
     };
@@ -176,6 +225,7 @@ export class OCPPMessageHandler {
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
     this.logger.info(`Status notification from ${chargePointId}:`, payload);
+    console.log({ payload });
 
     // Update connector status in database
     await this.db.updateConnectorStatus(
@@ -188,9 +238,9 @@ export class OCPPMessageHandler {
     // Update connection's current data
     connection.currentData.status = payload.status;
     connection.currentData.connectorId = payload.connectorId;
-    
+
     // Handle alarms if there's an error
-    if (payload.errorCode && payload.errorCode !== 'NoError') {
+    if (payload.errorCode && payload.errorCode !== "NoError") {
       await this.db.createAlarm({
         chargePointId,
         connectorId: payload.connectorId,
@@ -198,7 +248,7 @@ export class OCPPMessageHandler {
         severity: this.getAlarmSeverity(payload.errorCode),
         message: payload.info || `Error: ${payload.errorCode}`,
       });
-      
+
       connection.currentData.alarm = payload.errorCode;
     } else {
       connection.currentData.alarm = null;
@@ -213,10 +263,10 @@ export class OCPPMessageHandler {
     connection: ChargePointConnection
   ): Promise<MeterValuesResponse> {
     this.logger.debug(`Meter values from ${chargePointId}:`, payload);
-
+    console.log({ MeterValue: payload });
     // Process and store meter values
     for (const meterValue of payload.meterValue) {
-      const sampledValues = meterValue.sampledValue.map(sv => ({
+      const sampledValues = meterValue.sampledValue.map((sv) => ({
         value: sv.value,
         context: sv.context,
         format: sv.format,
@@ -247,8 +297,8 @@ export class OCPPMessageHandler {
 
     // Validate ID tag
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
-    
-    if (idTagValidation.status !== 'ACCEPTED') {
+
+    if (idTagValidation.status !== "ACCEPTED") {
       return {
         transactionId: -1,
         idTagInfo: {
@@ -273,16 +323,20 @@ export class OCPPMessageHandler {
     });
 
     // Update connector status
-    await this.db.updateConnectorStatus(chargePointId, payload.connectorId, 'CHARGING');
-    
+    await this.db.updateConnectorStatus(
+      chargePointId,
+      payload.connectorId,
+      "CHARGING"
+    );
+
     // Update connection data
-    connection.currentData.status = 'CHARGING';
+    connection.currentData.status = "CHARGING";
     connection.currentData.connected = true;
 
     return {
       transactionId,
       idTagInfo: {
-        status: 'Accepted',
+        status: "Accepted",
         expiryDate: idTagValidation.expiryDate?.toISOString(),
       },
     };
@@ -297,11 +351,11 @@ export class OCPPMessageHandler {
 
     // Get transaction details
     const transaction = await this.db.getTransaction(payload.transactionId);
-    
+
     if (!transaction) {
       return {
         idTagInfo: {
-          status: 'Invalid',
+          status: "Invalid",
         },
       };
     }
@@ -315,18 +369,23 @@ export class OCPPMessageHandler {
     );
 
     // Update connector status
-    await this.db.updateConnectorStatus(chargePointId, transaction.connectorId, 'AVAILABLE');
-    
+    await this.db.updateConnectorStatus(
+      chargePointId,
+      transaction.connectorId,
+      "AVAILABLE"
+    );
+
     // Update connection data
-    connection.currentData.status = 'AVAILABLE';
+    connection.currentData.status = "AVAILABLE";
     connection.currentData.connected = false;
     connection.currentData.stopReason = payload.reason || null;
-    connection.currentData.chargingEnergy = payload.meterStop - transaction.meterStart;
+    connection.currentData.chargingEnergy =
+      payload.meterStop - transaction.meterStart;
 
     // Process transaction data if provided
     if (payload.transactionData) {
       for (const meterValue of payload.transactionData) {
-        const sampledValues = meterValue.sampledValue.map(sv => ({
+        const sampledValues = meterValue.sampledValue.map((sv) => ({
           value: sv.value,
           context: sv.context,
           format: sv.format,
@@ -348,7 +407,7 @@ export class OCPPMessageHandler {
 
     return {
       idTagInfo: {
-        status: 'Accepted',
+        status: "Accepted",
       },
     };
   }
@@ -361,7 +420,7 @@ export class OCPPMessageHandler {
     this.logger.info(`Authorize request from ${chargePointId}:`, payload);
 
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
-    
+
     return {
       idTagInfo: {
         status: idTagValidation.status as any,
@@ -370,19 +429,38 @@ export class OCPPMessageHandler {
     };
   }
 
-  private getAlarmSeverity(errorCode: string): 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' {
-    const criticalErrors = ['GroundFailure', 'HighTemperature', 'InternalError'];
-    const errorCodes = ['PowerMeterFailure', 'ReaderFailure', 'ResetFailure'];
-    const warningCodes = ['ConnectorLockFailure', 'EVCommunicationError', 'PowerSwitchFailure'];
-    
-    if (criticalErrors.includes(errorCode)) return 'CRITICAL';
-    if (errorCodes.includes(errorCode)) return 'ERROR';
-    if (warningCodes.includes(errorCode)) return 'WARNING';
-    
-    return 'INFO';
+  private getAlarmSeverity(
+    errorCode: string
+  ): "INFO" | "WARNING" | "ERROR" | "CRITICAL" {
+    const criticalErrors = [
+      "GroundFailure",
+      "HighTemperature",
+      "InternalError",
+    ];
+    const errorCodes = ["PowerMeterFailure", "ReaderFailure", "ResetFailure"];
+    const warningCodes = [
+      "ConnectorLockFailure",
+      "EVCommunicationError",
+      "PowerSwitchFailure",
+    ];
+
+    if (criticalErrors.includes(errorCode)) return "CRITICAL";
+    if (errorCodes.includes(errorCode)) return "ERROR";
+    if (warningCodes.includes(errorCode)) return "WARNING";
+
+    return "INFO";
   }
 
-  public addPendingCall(uniqueId: string, resolve: Function, timeout: NodeJS.Timeout): void {
-    this.pendingCalls.set(uniqueId, { resolve, timeout });
+  public addPendingCall(
+    uniqueId: string,
+    resolve: (data: any) => void,
+    reject: (err: any) => void,
+    timeout: NodeJS.Timeout
+  ): void {
+    try {
+      this.pendingCalls.set(uniqueId, { resolve, reject, timeout });
+    } catch (err) {
+      reject(err); // if something fails when adding, reject immediately
+    }
   }
 }
