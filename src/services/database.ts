@@ -294,7 +294,7 @@ export class DatabaseService {
 
   // Meter Values Management
   public async saveMeterValues(data: {
-    transactionId?: number;
+    transactionId?: number | null;
     connectorId: number;
     chargePointId: string;
     timestamp: Date;
@@ -310,7 +310,7 @@ export class DatabaseService {
   }): Promise<void> {
     await this.prisma.meterValue.create({
       data: {
-        transactionId: data.transactionId,
+        transactionId: data.transactionId?,
         connectorId: data.connectorId,
         chargePointId: data.chargePointId,
         timestamp: data.timestamp,
