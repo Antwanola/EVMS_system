@@ -150,9 +150,8 @@ model MeterValue {
   measurand     String?
   phase         String?
   location      String?
-  unit          String
+  unit          String?
   connectorId   Int?
-  // chargePointId String?
   // Sampled values
   sampledValues SampledValue[]
 
