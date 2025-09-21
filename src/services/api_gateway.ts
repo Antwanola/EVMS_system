@@ -27,7 +27,7 @@ export class APIGateway {
     private redis?: RedisService
   ) {
     this.router = Router();
-    this.setupRateLimiter();
+    // this.setupRateLimiter();
     this.setupRoutes();
     
   }
@@ -51,17 +51,19 @@ export class APIGateway {
     this.router.post('/auth/login', this.login.bind(this));
     this.router.post('/auth/register',  this.register.bind(this));
     this.router.post('/auth/refresh', this.refreshToken.bind(this));
-
+//this.authenticateUser.bind(this)
     // Charge point routes
-    this.router.get('/charge-points', this.authenticateUser.bind(this), this.getChargePoints.bind(this));
-    this.router.get('/charge-points/:id', this.authenticateUser.bind(this), this.getChargePoint.bind(this));
-    this.router.get('/charge-points/:id/data', this.authenticateUser.bind(this), this.getChargePointData.bind(this));
-    this.router.get('/charge-points/:id/history', this.authenticateUser.bind(this), this.getChargePointHistory.bind(this));
-    this.router.get('/charge-points/:id/status', this.authenticateUser.bind(this), this.getChargePointStatus.bind(this));
+    this.router.get('/charge-points',  this.getChargePoints.bind(this));
+    this.router.get('/charge-points/:id',  this.getChargePoint.bind(this));
+    this.router.get('/charge-points/:id/data',  this.getChargePointData.bind(this));
+    this.router.get('/charge-points/:id/history',  this.getChargePointHistory.bind(this));
+    this.router.get('/charge-points/:id/status',  this.getChargePointStatus.bind(this));
+    this.router.get('/charge-points/:id/connectors', this.getChargePointConnectors.bind(this))
+    this.router.post('/charge-points/:id/message',)
 
     // Real-time data routes
-    this.router.get('/realtime/all', this.authenticateUser.bind(this), this.getAllRealtimeData.bind(this));
-    this.router.get('/realtime/:chargePointId', this.authenticateUser.bind(this), this.getRealtimeData.bind(this));
+    this.router.get('/realtime/all',  this.getAllRealtimeData.bind(this));
+    this.router.get('/realtime/:chargePointId',  this.getRealtimeData.bind(this));
 
     // Transaction routes
     this.router.get('/transactions', this.authenticateUser.bind(this), this.getTransactions.bind(this));
@@ -75,7 +77,8 @@ export class APIGateway {
     this.router.post('/charge-points/:id/unlock', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.unlockConnector.bind(this));
 
     // Configuration routes
-    this.router.get('/charge-points/:id/configuration', this.authenticateUser.bind(this), this.getConfiguration.bind(this));
+    // this.authenticateUser.bind(this),
+    this.router.get('/charge-points/:id/configuration',  this.getConfiguration.bind(this));
     this.router.post('/charge-points/:id/configuration', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.changeConfiguration.bind(this));
 
     // Alarm routes
@@ -253,9 +256,10 @@ export class APIGateway {
     try {
       const chargePoints = await this.db.getAllChargePoints();
       const connectedIds = this.ocppServer.getConnectedChargePoints();
+      console.log({connectedIds})
       
       const enrichedChargePoints = chargePoints.map(cp => ({
-        ...cp,
+        cp,
         isConnected: connectedIds.includes(cp.id),
         realTimeData: this.ocppServer.getChargePointData(cp.id),
       }));
@@ -280,7 +284,7 @@ export class APIGateway {
       const realTimeData = this.ocppServer.getChargePointData(id);
 
       this.sendSuccessResponse(res, {
-        ...chargePoint,
+        chargePoint,
         isConnected,
         realTimeData,
       });
@@ -309,7 +313,7 @@ export class APIGateway {
   private async getChargePointHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { startDate, endDate, limit = '1000', connectorId } = req.query;
+      const { startDate, endDate, limit = '1000', connectorId } = req.body;
 
       const history = await this.db.getChargingDataHistory(
         id,
@@ -659,5 +663,112 @@ export class APIGateway {
   public getRouter(): Router {
     return this.router;
   }
+
+
+
+ /**
+   * Get all connectors for a specific charge point
+   */
+  private async getChargePointConnectors(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    // Await the async discovery function
+    const result = await this.ocppServer.getChargeStationGunDetails(id);
+
+    if (!result) {
+      return this.sendErrorResponse(
+        res,
+        404,
+        "Charge point not connected or no data available"
+      );
+    }
+
+    const { connectors, metadata, success } = result;
+
+    // Optional: build summary stats
+    const summary = {
+  total: connectors.length,
+  available: connectors.filter((c) => c.status?.includes("Available")).length,
+  charging: connectors.filter((c) => c.status?.includes("Charging")).length,
+  faulted: connectors.filter((c) => c.status?.includes("Faulted")).length,
+  unavailable: connectors.filter((c) => c.status?.includes("Unavailable")).length,
+};
+
+
+    return this.sendSuccessResponse(res, {
+      chargePointId: id,
+      success,
+      connectorCount: metadata.totalConnectors,
+      metadata,
+      summary,
+      connectors,
+      result
+    });
+  } catch (error) {
+    this.logger.error("Error fetching charge point connectors:", error);
+    return this.sendErrorResponse(
+      res,
+      500,
+      "Failed to fetch charge point connectors"
+    );
+  }
+}
+
+  /**
+   * Get specific connector data
+   */
+  private async getChargePointConnector(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id, connectorId } = req.params;
+      const connector = this.ocppServer.getChargePointConnector(id, parseInt(connectorId));
+      
+      if (!connector) {
+        return this.sendErrorResponse(res, 404, 'Connector not found or charge point not connected');
+      }
+
+      this.sendSuccessResponse(res, connector);
+    } catch (error) {
+      this.logger.error('Error fetching connector:', error);
+      this.sendErrorResponse(res, 500, 'Failed to fetch connector');
+    }
+  }
+
+  // OPTIONALLY ENHANCE existing method (but keep it working as before)
+  // private async getChargePoint(req: AuthenticatedRequest, res: Response): Promise<void> {
+  //   try {
+  //     const { id } = req.params;
+  //     const chargePoint = await this.db.getChargePoint(id);
+      
+  //     if (!chargePoint) {
+  //       return this.sendErrorResponse(res, 404, 'Charge point not found');
+  //     }
+
+  //     const isConnected = this.ocppServer.getConnectedChargePoints().includes(id);
+      
+  //     // Keep backward compatibility - still return realTimeData as single object
+  //     const realTimeData = this.ocppServer.getChargePointData(id);
+      
+  //     // Add new connector information (optional)
+  //     const connectors = this.ocppServer.getChargePointConnectors(id);
+  //     const connectorCount = this.ocppServer.getConnectorCount(id);
+
+  //     this.sendSuccessResponse(res, {
+  //       chargePoint,
+  //       isConnected,
+  //       realTimeData, // Keep this for backward compatibility
+  //       // Add new fields (optional - won't break existing clients)
+  //       connectorCount,
+  //       connectors: connectors || []
+  //     });
+  //   } catch (error) {
+  //     this.logger.error('Error fetching charge point:', error);
+  //     this.sendErrorResponse(res, 500, 'Failed to fetch charge point');
+  //   }
+  // }
+
 }
 

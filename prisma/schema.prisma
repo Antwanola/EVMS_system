@@ -44,7 +44,7 @@ model Connector {
   id              Int             @id @default(autoincrement())
   chargePointId   String
   connectorId     Int
-  type            ConnectorType   @default(TYPE2)
+  type            ConnectorType   @default(GBT)
   status          ConnectorStatus @default(AVAILABLE)
   errorCode       String?
   info            String?
@@ -140,17 +140,22 @@ model ChargingData {
 }
 
 model MeterValue {
-  id            String   @id @default(cuid())
-  transactionId Int?
-  connectorId   Int
-  chargePointId String
+  id            String       @id @default(uuid())
+  transactionId Int
+  transaction   Transaction  @relation(fields: [transactionId], references: [id])
   timestamp     DateTime
-
+  value         String
+  context       String?
+  format        String?
+  measurand     String?
+  phase         String?
+  location      String?
+  unit          String
   // Sampled values
   sampledValues SampledValue[]
 
   // Relationship
-  transaction Transaction? @relation(fields: [transactionId], references: [transactionId])
+  // transaction Transaction? @relation(fields: [transactionId], references: [transactionId])
 
   createdAt DateTime @default(now())
 
@@ -273,6 +278,7 @@ enum ConnectorType {
   TYPE2
   TYPE1
   TESLA
+  GBT
 
   @@map("connector_type")
 }
