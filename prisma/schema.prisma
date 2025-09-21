@@ -141,8 +141,6 @@ model ChargingData {
 
 model MeterValue {
   id            String         @id @default(uuid())
-  transactionId Int
-  transaction   Transaction    @relation(fields: [transactionId], references: [id])
   timestamp     DateTime
   value         String
   context       String?
@@ -159,21 +157,24 @@ model MeterValue {
   // Relationship
   // transaction Transaction? @relation(fields: [transactionId], references: [transactionId])
 
-  createdAt DateTime @default(now())
+  createdAt     DateTime     @default(now())
+  Transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  transactionId Int?
 
   @@map("meter_values")
 }
 
 model SampledValue {
-  id           String  @id @default(cuid())
-  meterValueId String
-  value        String
-  context      String?
-  format       String?
-  measurand    String?
-  phase        String?
-  location     String?
-  unit         String?
+  id            String  @id @default(cuid())
+  meterValueId  String
+  value         String
+  context       String?
+  format        String?
+  measurand     String?
+  phase         String?
+  location      String?
+  unit          String?
+  transactionId Int?
 
   // Relationship
   meterValue MeterValue @relation(fields: [meterValueId], references: [id], onDelete: Cascade)
