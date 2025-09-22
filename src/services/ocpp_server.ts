@@ -37,6 +37,7 @@ export class OCPPServer {
   private handleConnection(ws: WebSocket, request: any): void {
     const url = new URL(request.url!, `http://${request.headers.host}`);
     const chargePointId = url.pathname.split('/').pop();
+    console.log({chargePointId})
 
     if (!chargePointId) {
       this.logger.warn('Connection rejected: No charge point ID provided');
@@ -46,12 +47,7 @@ export class OCPPServer {
 
   // const defaultConnectors = parseInt(process.env.DEFAULT_CONNECTORS || '2');
   const connectors = new Map<number, ChargingStationData>();
-
-  // Initialize all connectors
-  // for (let i = 1; i <= defaultConnectors; i++) {
-  //   connectors.set(i, this.getDefaultChargingData(chargePointId, i));
-  // }
-
+  
     const connection: ChargePointConnection = {
       id: chargePointId,
       ws,
@@ -81,6 +77,7 @@ export class OCPPServer {
 
   private async handleMessage(chargePointId: string, data: any): Promise<void> {
     try {
+      console.log({data})
       const connection = this.connections.get(chargePointId);
       if (!connection) return;
 
