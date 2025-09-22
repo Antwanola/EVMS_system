@@ -294,7 +294,7 @@ export class OCPPServer {
 
     // Step 1: Try to get NumberOfConnectors from configuration
     try {
-      configResponse = await this.sendMessage(chargePointId, "MeterValuesSampledData", {
+      configResponse = await this.sendMessage(chargePointId, "MeterValues", {
         // key: ["HeartbeatInterval"],
       });
       console.log(`GetConfiguration response for ${chargePointId}:`, configResponse);

@@ -192,10 +192,10 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     });
 
     // Create default connector if it doesn't exist
-    await this.db.createOrUpdateConnector(chargePointId, 1, {
-      type: "TYPE2",
-      status: "AVAILABLE",
-    });
+    // await this.db.createOrUpdateConnector(chargePointId, 1, {
+    //   type: "TYPE2",
+    //   status: "AVAILABLE",
+    // });
 
     connection.bootNotificationSent = true;
     connection.heartbeatInterval = 300; // 5 minutes
@@ -232,7 +232,8 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       chargePointId,
       payload.connectorId,
       payload.status,
-      payload.errorCode
+      payload.errorCode,
+      payload.vendorErrorCode
     );
 
     // Update connection's current data

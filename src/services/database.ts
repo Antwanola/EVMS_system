@@ -138,7 +138,8 @@ export class DatabaseService {
     chargePointId: string,
     connectorId: number,
     status: ChargePointStatus,
-    errorCode?: string
+    errorCode?: string,
+    vendorErrorCode?: string
   ): Promise<void> {
     const normalisedStatus = status.toUpperCase() as ChargePointStatus
     await this.prisma.connector.upsert({
@@ -151,6 +152,7 @@ export class DatabaseService {
       update: {
         status: ConnectorStatus[normalisedStatus] || ConnectorStatus.AVAILABLE,
         errorCode,
+        vendorErrorCode,
         lastUpdated: new Date(),
         updatedAt: new Date(),
       },
