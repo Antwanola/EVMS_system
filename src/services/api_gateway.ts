@@ -258,8 +258,8 @@ export class APIGateway {
       const connectedIds = this.ocppServer.getConnectedChargePoints();
       console.log({connectedIds})
       
-      const enrichedChargePoints = chargePoints.map(cp => ({
-        cp,
+      const enrichedChargePoints = chargePoints.map(cp => (console.log(cp),{
+        chargePoint: cp,
         isConnected: connectedIds.includes(cp.id),
         realTimeData: this.ocppServer.getChargePointData(cp.id),
       }));
