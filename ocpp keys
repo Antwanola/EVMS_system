@@ -151,4 +151,17 @@ Received CallResult for GetConfiguration from DC04: {
     { key: 'CpoName', readonly: false, value: '' },
     { key: 'SecurityProfile', readonly: false, value: '0' }
   ]
+  //CONNECTOR PAYLOAD
+{
+  payload: {
+   connectorId: 2,
+  errorCode: 'NoError',
+  status: 'Available',
+   timestamp: '2025-09-22T00:02:50.618Z',
+ vendorId: '',
+ vendorErrorCode: '0x0000000000000000'
 }
+}
+
+
+
