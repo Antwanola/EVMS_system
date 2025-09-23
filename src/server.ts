@@ -38,7 +38,7 @@ class Application {
   private setupMiddleware(): void {
     this.app.use(helmet());
     this.app.use(cors({
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['*'],
+      origin: "http://localhost:3001",
       credentials: true
     }));
     this.app.use(express.json({ limit: '10mb' }));

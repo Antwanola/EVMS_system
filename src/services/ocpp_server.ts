@@ -1,5 +1,6 @@
 // src/services/ocpp-server.ts
 import { WebSocketServer, WebSocket } from 'ws';
+import { Server as HttpServer } from 'http'
 import { v4 as uuidv4 } from 'uuid';
 import  {Logger}  from '../Utils/logger';
 import { OCPPMessageHandler } from '../handlers/ocpp_handlers';
@@ -20,6 +21,7 @@ export class OCPPServer {
   private chargePointManager: ChargePointManager;
 
   constructor(
+    // private server: HttpServer,
     private wss: WebSocketServer,
     private db: DatabaseService,
     private redis: RedisService
@@ -36,7 +38,8 @@ export class OCPPServer {
 
   private handleConnection(ws: WebSocket, request: any): void {
     const url = new URL(request.url!, `http://${request.headers.host}`);
-    const chargePointId = url.pathname.split('/').pop();
+      const pathSegments = url.pathname.split('/').filter(Boolean); // remove empty segments
+    const chargePointId = pathSegments[pathSegments.length - 1]; // last segment is ID
     console.log({chargePointId})
 
     if (!chargePointId) {
