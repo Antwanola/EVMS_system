@@ -177,7 +177,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     connection: ChargePointConnection
   ): Promise<BootNotificationResponse> {
     this.logger.info(`Boot notification from ${chargePointId}:`, payload);
-
+    console.log({ "boot":payload });
     // Store charge point information in database
     await this.db.createOrUpdateChargePoint({
       id: chargePointId,
@@ -225,7 +225,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
     this.logger.info(`Status notification from ${chargePointId}:`, payload);
-    console.log({ payload });
+    console.log({ "load":payload });
 
     // Update connector status in database
     await this.db.updateConnectorStatus(
@@ -237,8 +237,8 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     );
 
     // Update connection's current data
-    connection.currentData.status = payload.status;
-    connection.currentData.connectorId = payload.connectorId;
+    connection.currentData!.status = payload.status;
+    connection.currentData!.connectorId = payload.connectorId;
 
     // Handle alarms if there's an error
     if (payload.errorCode && payload.errorCode !== "NoError") {
@@ -250,9 +250,9 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
         message: payload.info || `Error: ${payload.errorCode}`,
       });
 
-      connection.currentData.alarm = payload.errorCode;
+      connection.currentData!.alarm = payload.errorCode;
     } else {
-      connection.currentData.alarm = null;
+      connection.currentData!.alarm = null;
     }
 
     return {};
@@ -331,8 +331,8 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     );
 
     // Update connection data
-    connection.currentData.status = "CHARGING";
-    connection.currentData.connected = true;
+    connection.currentData!.status = "CHARGING";
+    connection.currentData!.connected = true;
 
     return {
       transactionId,
@@ -377,10 +377,10 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     );
 
     // Update connection data
-    connection.currentData.status = "AVAILABLE";
-    connection.currentData.connected = false;
-    connection.currentData.stopReason = payload.reason || null;
-    connection.currentData.chargingEnergy =
+    connection.currentData!.status = "AVAILABLE";
+    connection.currentData!.connected = false;
+    connection.currentData!.stopReason = payload.reason || null;
+    connection.currentData!.chargingEnergy =
       payload.meterStop - transaction.meterStart;
 
     // Process transaction data if provided

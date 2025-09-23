@@ -257,7 +257,6 @@ export class APIGateway {
       const chargePoints = await this.db.getAllChargePoints();
       const connectedIds = this.ocppServer.getConnectedChargePoints();
       console.log({connectedIds})
-      
       const enrichedChargePoints = chargePoints.map(cp => (console.log(cp),{
         chargePoint: cp,
         isConnected: connectedIds.includes(cp.id),
@@ -724,7 +723,7 @@ export class APIGateway {
   private async getChargePointConnector(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id, connectorId } = req.params;
-      const connector = this.ocppServer.getChargePointConnector(id, parseInt(connectorId));
+      const connector = this.ocppServer.triggerStatusForAll()
       
       if (!connector) {
         return this.sendErrorResponse(res, 404, 'Connector not found or charge point not connected');
