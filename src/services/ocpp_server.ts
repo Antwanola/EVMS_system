@@ -13,6 +13,7 @@ import {
   MessageType,
   ChargingStationData 
 } from '../types/ocpp_types';
+import { buffer } from 'stream/consumers';
 
 export class OCPPServer {
   private logger = Logger.getInstance();
@@ -41,6 +42,7 @@ export class OCPPServer {
       const pathSegments = url.pathname.split('/').filter(Boolean); // remove empty segments
     const chargePointId = pathSegments[pathSegments.length - 1]; // last segment is ID
     console.log({chargePointId})
+    console.log({pathSegments})
 
     if (!chargePointId) {
       this.logger.warn('Connection rejected: No charge point ID provided');
@@ -78,12 +80,62 @@ export class OCPPServer {
     this.chargePointManager.registerChargePoint(chargePointId, connection);
   }
 
+
+  // Main method: triggers StatusNotification for all connectors of all charge points
+  public async triggerStatusForAll(): Promise<void> {
+    const allPromises: Promise<void>[] = [];
+
+    this.connections.forEach((chargeStation) => {
+      const connectorIds = Array.from(chargeStation.connectors.keys());
+
+      connectorIds.forEach((connectorId) => {
+        const p = this.sendTriggerMessage(chargeStation, connectorId, 'StatusNotification')
+          .then((res) => {
+            console.log(`✅ ${chargeStation.id} connector ${connectorId} responded`, res);
+          })
+          .catch((err) => {
+            console.error(`❌ Error for ${chargeStation.id} connector ${connectorId}:`, err.message);
+          });
+
+        allPromises.push(p);
+      });
+    });
+
+    // Wait for all TriggerMessages to finish
+    await Promise.allSettled(allPromises);
+    console.log('All connectors triggered for StatusNotification');
+  }
+
+
+
+   // Helper to send TriggerMessage for one connector
+  private sendTriggerMessage(
+    connection: ChargePointConnection,
+    connectorId: number,
+    requestedMessage: 'StatusNotification' | 'MeterValues' | 'Heartbeat' | 'BootNotification' | 'FirmwareStatusNotification'
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const uniqueId = uuidv4();
+      const message = [MessageType.CALL, uniqueId, 'TriggerMessage', {
+        requestedMessage,
+        connectorId
+      }];
+
+      const timeout = setTimeout(() => {
+        reject(new Error(`Timeout waiting for response from ${connection.id} connector ${connectorId}`));
+      }, 30000);
+
+      // Store resolver in messageHandler (assuming you have a pendingCalls map)
+      this.messageHandler.addPendingCall(uniqueId, resolve, reject, timeout);
+
+      connection.ws.send(JSON.stringify(message));
+    });
+  }
+
   private async handleMessage(chargePointId: string, data: any): Promise<void> {
     try {
-      console.log({data})
       const connection = this.connections.get(chargePointId);
       if (!connection) return;
-
       connection.lastSeen = new Date();
       connection.isAlive = true;
 
@@ -115,8 +167,8 @@ export class OCPPServer {
       // Update connection's current data based on message type
       switch (message.action) {
         case 'StatusNotification':
-          connection.currentData.status = message.payload.status;
-          connection.currentData.timestamp = new Date();
+          connection.currentData!.status = message.payload.status;
+          connection.currentData!.timestamp = new Date();
           break;
         
         case 'MeterValues':
@@ -132,7 +184,7 @@ export class OCPPServer {
       );
 
       // Store in database for historical data
-      await this.db.saveChargingData(connection.currentData);
+      await this.db.saveChargingData(connection.currentData!);
 
     } catch (error) {
       this.logger.error(`Error updating real-time data for ${chargePointId}:`, error);
@@ -224,40 +276,40 @@ export class OCPPServer {
         switch (sample.measurand) {
           case 'Voltage':
             if (sample.location === 'Inlet') {
-              connection.currentData.inputVoltage = parseFloat(sample.value);
+              connection.currentData!.inputVoltage = parseFloat(sample.value);
             } else if (sample.location === 'Outlet') {
-              connection.currentData.outputVoltage = parseFloat(sample.value);
+              connection.currentData!.outputVoltage = parseFloat(sample.value);
             }
             break;
           
           case 'Current.Import':
             if (sample.location === 'Inlet') {
-              connection.currentData.inputCurrent = parseFloat(sample.value);
+              connection.currentData!.inputCurrent = parseFloat(sample.value);
             } else {
-              connection.currentData.demandCurrent = parseFloat(sample.value);
+              connection.currentData!.demandCurrent = parseFloat(sample.value);
             }
             break;
           
           case 'Energy.Active.Import.Register':
-            connection.currentData.chargingEnergy = parseFloat(sample.value);
+            connection.currentData!.chargingEnergy = parseFloat(sample.value);
             break;
           
           case 'Power.Active.Import':
-            connection.currentData.outputEnergy = parseFloat(sample.value);
+            connection.currentData!.outputEnergy = parseFloat(sample.value);
             break;
           
           case 'Temperature':
-            connection.currentData.gunTemperature = parseFloat(sample.value);
+            connection.currentData!.gunTemperature = parseFloat(sample.value);
             break;
           
           case 'SoC':
-            connection.currentData.stateOfCharge = parseFloat(sample.value);
+            connection.currentData!.stateOfCharge = parseFloat(sample.value);
             break;
         }
       });
     });
 
-    connection.currentData.timestamp = new Date();
+    connection.currentData!.timestamp = new Date();
   }
 
 
@@ -537,18 +589,19 @@ export class OCPPServer {
   public getChargePointData(chargePointId: string): ChargingStationData | null {
     const connection = this.connections.get(chargePointId);
    
-    return connection ? connection.currentData : null;
+    return connection ? connection.currentData! : null;
   }
 
   public getAllChargePointsData(): Map<string, ChargingStationData> {
     const data = new Map<string, ChargingStationData>();
     this.connections.forEach((connection, id) => {
-      data.set(id, connection.currentData);
+      data.set(id, connection.currentData!);
     });
     return data;
   }
 
   private getDefaultChargingData(chargePointId: string, connectorId: number): ChargingStationData {
+    this.triggerStatusForAll()
     return {
       chargePointId,
       connectorId,
