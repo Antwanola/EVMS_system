@@ -177,7 +177,6 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     connection: ChargePointConnection
   ): Promise<BootNotificationResponse> {
     this.logger.info(`Boot notification from ${chargePointId}:`, payload);
-    console.log({ "boot":payload });
     // Store charge point information in database
     await this.db.createOrUpdateChargePoint({
       id: chargePointId,
@@ -224,8 +223,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     payload: StatusNotificationRequest,
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
-    this.logger.info(`Status notification from ${chargePointId}:`, payload);
-    console.log({ "load":payload });
+    this.logger.info(`Status notification from ${chargePointId}:`, payload)
 
     // Update connector status in database
     await this.db.updateConnectorStatus(
@@ -276,7 +274,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
         location: sv.location,
         unit: sv.unit,
       }));
-
+      console.log({sampledValues})
       await this.db.saveMeterValues({
         transactionId: payload.transactionId,
         connectorId: payload.connectorId,

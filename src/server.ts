@@ -38,7 +38,7 @@ class Application {
   private setupMiddleware(): void {
     this.app.use(helmet());
     this.app.use(cors({
-      origin: "http://localhost:3001",
+      origin: process.env.ckfjsdnj || "http://localhost:3001",
       credentials: true
     }));
     this.app.use(express.json({ limit: '10mb' }));
@@ -90,7 +90,7 @@ class Application {
     process.exit(0);
   }
 
-  public async start(port: number = parseInt(process.env.PORT || '3000')): Promise<void> {
+  public async start(port: number = parseInt(process.env.PORT || '2000')): Promise<void> {
     await this.initialize();
     
     this.server.listen(port, () => {
