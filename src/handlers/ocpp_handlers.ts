@@ -155,6 +155,7 @@ export class OCPPMessageHandler {
   }
 
 private handleCallResult(uniqueId: string, payload: any): void {
+  console.log({"Call result": payload})
   const pendingCall = this.pendingCalls.get(uniqueId);
   if (pendingCall) {
     clearTimeout(pendingCall.timeout);
