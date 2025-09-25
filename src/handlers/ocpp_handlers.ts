@@ -73,6 +73,7 @@ export class OCPPMessageHandler {
     payload: any,
     connection: ChargePointConnection
   ): Promise<any> {
+    console.log({action, payload})
     try {
       let response: any;
 
