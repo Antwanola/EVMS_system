@@ -140,6 +140,7 @@ export class OCPPServer {
       connection.isAlive = true;
 
       const message: OCPPMessage = JSON.parse(data.toString());
+      console.log({message})
       this.logger.debug(`Received message from ${chargePointId}:`, message);
 
       const response = await this.messageHandler.handleMessage(chargePointId, message, connection);
