@@ -38,7 +38,7 @@ class Application {
   private setupMiddleware(): void {
     this.app.use(helmet());
     this.app.use(cors({
-      origin: process.env.ckfjsdnj || "http://localhost:3001",
+      origin: ["https://evms-frontend-7p1a.vercel.app", "http://localhost:3000"],
       credentials: true
     }));
     this.app.use(express.json({ limit: '10mb' }));
