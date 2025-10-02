@@ -96,7 +96,7 @@ export class ChargePointManager {
       );
 
       // optional: persist in DB for history
-      await this.db.logConnectorStatus(chargePointId, connectorId, status, errorCode);
+      // await this.db.logConnectorStatus(chargePointId, connectorId, status, errorCode);
 
       this.logger.info(`Updated connector ${connectorId} of charge point ${chargePointId} to ${status}`);
     } catch (error) {
