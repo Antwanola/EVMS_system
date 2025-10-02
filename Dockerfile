@@ -1,52 +1,53 @@
 # -------------------
 # Build stage
 # -------------------
-FROM node:20 AS builder
+FROM node:20-alpine AS builder
 
+# Set working directory
 WORKDIR /usr/src/app
 
-# Copy package files
-COPY package*.json ./
-COPY tsconfig.json ./
+# Install dependencies needed to build native modules
+RUN apk add --no-cache bash python3 g++ make
 
-# Install dependencies
-RUN npm ci  && npm cache clean --force
+# Copy package files
+COPY package*.json tsconfig.json ./
+
+# Install all dependencies
+RUN npm ci
 
 # Copy Prisma schema
 COPY prisma ./prisma/
 
-# Generate Prisma client for Linux
+# Generate Prisma client
 RUN npx prisma generate
 
-# Copy source code and build
+# Copy the rest of the source code
 COPY . .
+
+# Build TypeScript code
 RUN npm run build
 
 # -------------------
 # Runtime stage
 # -------------------
-FROM node:20-slim AS runner
-
-# Install OpenSSL (required for Prisma)
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+FROM node:20-alpine AS runner
 
 WORKDIR /usr/src/app
 
-# Copy package files
-COPY --from=builder /usr/src/app/package*.json ./
+# Install OpenSSL (required by Prisma)
+RUN apk add --no-cache openssl
 
-# Copy built application
+# Copy package files and production dependencies
+COPY --from=builder /usr/src/app/package*.json ./
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+
+# Copy built application and Prisma client
 COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/prisma ./prisma
-
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
-
-# Generate Prisma client in the runtime environment
-RUN npx prisma generate
+COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
 
 # Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN addgroup -S appuser && adduser -S appuser -G appuser
 RUN chown -R appuser:appuser /usr/src/app
 USER appuser
 
