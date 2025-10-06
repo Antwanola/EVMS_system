@@ -66,7 +66,7 @@ class Application {
     this.setupRoutes();
     
     this.ocppServer.initialize();
-    await InitialSeed()
+    // await InitialSeed()
 
     // Graceful shutdown
     process.on('SIGTERM', this.shutdown.bind(this));
