@@ -1,30 +1,30 @@
 # -------------------
-# Build stage
+# Base builder stage
 # -------------------
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS base
 
-# Set working directory
 WORKDIR /usr/src/app
 
-# Install dependencies needed to build native modules
-RUN apk add --no-cache bash python3 g++ make
+# Install system dependencies needed for building native modules
+RUN apk add --no-cache bash python3 g++ make openssl
 
-# Copy package files
+# Copy package and config files
 COPY package*.json tsconfig.json ./
 
-# Install all dependencies
+# Install dependencies (using ci for lockfile integrity)
 RUN npm ci
 
-# Copy Prisma schema
+# Copy Prisma schema and generate client
 COPY prisma ./prisma/
-
-# Generate Prisma client
 RUN npx prisma generate
 
-# Copy the rest of the source code
+# Copy source
 COPY . .
 
-# Build TypeScript code
+# -------------------
+# Build stage (for production)
+# -------------------
+FROM base AS builder
 RUN npm run build
 
 # -------------------
@@ -34,29 +34,38 @@ FROM node:20-alpine AS runner
 
 WORKDIR /usr/src/app
 
-# Install OpenSSL (required by Prisma)
 RUN apk add --no-cache openssl
 
-# Copy package files and production dependencies
+# Copy from builder
 COPY --from=builder /usr/src/app/package*.json ./
 COPY --from=builder /usr/src/app/node_modules ./node_modules
-
-# Copy built application and Prisma client
-COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/prisma ./prisma
 COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /usr/src/app/dist ./dist
 
-# Create non-root user for security
+# Create logs directory with proper permissions BEFORE switching to non-root user
+RUN mkdir -p logs && chmod 755 logs
+
+# Non-root user for security
 RUN addgroup -S appuser && adduser -S appuser -G appuser
+
+# Change ownership of the entire app directory including logs
 RUN chown -R appuser:appuser /usr/src/app
+
 USER appuser
 
-# Expose port
-EXPOSE 3000
+# Environment variable toggle
+ARG NODE_ENV=production
+ENV NODE_ENV=$NODE_ENV
+EXPOSE 3002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+    CMD node -e "require('http').get('http://localhost:3002/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-# Run migrations and start server
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
+# -------------------
+# Conditional command
+# -------------------
+# If NODE_ENV=development, run TS directly with ts-node + nodemon
+# Else, run the compiled JS version.
+CMD ["sh", "-c", "if [ \"$NODE_ENV\" = \"development\" ]; then npx nodemon --watch src -e ts --exec npx ts-node src/server.ts; else npx prisma migrate deploy && npm run start:prod; fi"]
