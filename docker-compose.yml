@@ -10,8 +10,13 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.myresolver.acme.email=youremail@example.com"
+      - "--certificatesresolvers.myresolver.acme.email=oolayiwola@folti.io"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "traefik.http.routers.ocpp-secure.entrypoints=websecure"
+      - "traefik.http.routers.ocpp-secure.tls=true"
+
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
     ports:
       - "80:80"
       - "443:443"
