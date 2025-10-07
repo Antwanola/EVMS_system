@@ -27,6 +27,7 @@ services:
       dockerfile: Dockerfile
     container_name: ocpp-server
     environment:
+      - PORT=3000
       - JWT_SECRET=secretkey123
       - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ocpp
