@@ -225,7 +225,7 @@ export interface ChargePointConnection {
   lastSeen: Date;
   bootNotificationSent: boolean;
   heartbeatInterval: number;
-  currentData?: ChargingStationData;
+  currentData?: ChargingStationData | null;
   connectors: Map<number, ChargingStationData>; // Changed from single currentData
   numberOfConnectors?: number; // Track total connectors
   meters?: Map<string, MeterData>; // Meter ID -> Meter readings
@@ -258,6 +258,10 @@ export interface APIUser {
   permissions: string[];
   apiKey?: string;
   chargePointAccess?: string[];
+  email?: string;
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 interface MeterConfiguration {
