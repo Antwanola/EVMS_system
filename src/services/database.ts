@@ -1,5 +1,5 @@
 // src/services/database.ts
-import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, ChargingData, User, Alarm } from '@prisma/client';
+import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, ChargingData, User, Alarm, Prisma, UserRole } from '@prisma/client';
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
 import { UserWithRelations } from '../types/userWithRelations';
@@ -514,4 +514,232 @@ export class DatabaseService {
   public getPrismaClient(): PrismaClient {
     return this.prisma;
   }
+
+  /**
+ * Get all users (excluding passwords)
+ */
+public async getAllUsers(): Promise<any[]> {
+  return this.prisma.user.findMany({
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
 }
+
+/**
+ * Update user
+ */
+
+public async updateUser(
+  userId: string,
+  data: {
+    username?: string;
+    email?: string;
+    password?: string;
+    role?: UserRole;
+    isActive?: boolean;
+  }
+) {
+  const updateData: Prisma.UserUpdateInput = {
+    ...(data.username && { username: data.username }),
+    ...(data.email && { email: data.email }),
+    ...(data.password && { password: data.password }),
+    ...(data.role && { role: data.role }),
+    ...(data.isActive !== undefined && { isActive: data.isActive }),
+  };
+
+  return this.prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+}
+
+/**
+ * 
+ * @param userId Delete user by ID
+ */
+public async deleteUser(userId: string): Promise<void> {
+  await this.prisma.user.delete({
+    where: { id: userId },
+  });
+}
+
+/**
+ * Get transactions with filters
+ */
+public async getTransactions(filters: {
+  chargePointId?: string;
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  offset?: number;
+}): Promise<Transaction[]> {
+  const where: any = {};
+
+  if (filters.chargePointId) {
+    where.chargePointId = filters.chargePointId;
+  }
+
+  if (filters.startDate || filters.endDate) {
+    where.startTimestamp = {};
+    if (filters.startDate) {
+      where.startTimestamp.gte = filters.startDate;
+    }
+    if (filters.endDate) {
+      where.startTimestamp.lte = filters.endDate;
+    }
+  }
+
+  // const limit = filters.limit || 100;
+  // const page = filters.page && filters.page > 0 ? filters.page : 1;
+  // const offset = (page - 1) * limit;
+
+   return this.prisma.transaction.findMany({
+    where,
+    take: filters.limit || 100,
+    skip: filters.offset || 0,
+    orderBy: {
+      startTimestamp: 'desc',
+    },
+    include: {
+      chargePoint: true,
+      connector: true,
+    },
+  });
+}
+
+/**
+ * Get alarms with filters
+ */
+public async getAlarms(filters: {
+  chargePointId?: string;
+  severity?: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  resolved?: boolean;
+}): Promise<Alarm[]> {
+  const where: any = {};
+
+  if (filters.chargePointId) {
+    where.chargePointId = filters.chargePointId;
+  }
+
+  if (filters.severity) {
+    where.severity = filters.severity;
+  }
+
+  if (filters.resolved !== undefined) {
+    where.resolved = filters.resolved;
+  }
+
+  return this.prisma.alarm.findMany({
+    where,
+    orderBy: {
+      createdAt: 'desc',
+    },
+    include: {
+      chargePoint: true,
+    },
+  });
+}
+
+/**
+ * Get energy consumption analytics
+ */
+public async getEnergyConsumption(params: {
+  chargePointId?: string;
+  startDate?: Date;
+  endDate?: Date;
+  period: string;
+}): Promise<any[]> {
+  const where: any = {};
+
+  if (params.chargePointId) {
+    where.chargePointId = params.chargePointId;
+  }
+
+  if (params.startDate || params.endDate) {
+    where.timestamp = {};
+    if (params.startDate) {
+      where.timestamp.gte = params.startDate;
+    }
+    if (params.endDate) {
+      where.timestamp.lte = params.endDate;
+    }
+  }
+
+  // Get all charging data within the time range
+  const chargingData = await this.prisma.chargingData.findMany({
+    where,
+    select: {
+      chargePointId: true,
+      connectorId: true,
+      chargingEnergy: true,
+      outputEnergy: true,
+      timestamp: true,
+    },
+    orderBy: {
+      timestamp: 'asc',
+    },
+  });
+
+  // Group by period (day, week, month)
+  const grouped: any = {};
+  
+  chargingData.forEach(data => {
+    let key: string;
+    const date = new Date(data.timestamp);
+
+    switch (params.period) {
+      case 'hour':
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}`;
+        break;
+      case 'day':
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        break;
+      case 'week':
+        const weekNum = Math.ceil(date.getDate() / 7);
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-W${weekNum}`;
+        break;
+      case 'month':
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        break;
+      default:
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        period: key,
+        totalEnergy: 0,
+        count: 0,
+        timestamp: date,
+      };
+    }
+
+    grouped[key].totalEnergy += data.chargingEnergy || 0;
+    grouped[key].count += 1;
+  });
+
+  return Object.values(grouped).sort((a: any, b: any) => 
+    a.timestamp.getTime() - b.timestamp.getTime()
+  );
+}
+}
+

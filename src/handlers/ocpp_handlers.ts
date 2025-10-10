@@ -1,9 +1,7 @@
 // src/handlers/ocpp-message-handler.ts
-import { CallTracker } from "assert";
 import { Logger } from "../Utils/logger";
 import { DatabaseService } from "../services/database";
 import { RedisService } from "../services/redis";
-import { MeterValue } from "../types/ocpp_types";
 import {
   OCPPMessage,
   MessageType,
@@ -23,26 +21,29 @@ import {
   AuthorizeResponse,
 } from "../types/ocpp_types";
 
-export class OCPPMessageHandler {
-  private logger = Logger.getInstance();
-  private pendingCalls = new Map<
-    string,
-    {
-      resolve: (data: any) => void;
-      reject: (err: any) => void;
-      timeout: NodeJS.Timeout;
-    }
-  >();
+interface PendingCall {
+  resolve: (value: any) => void;
+  reject: (reason?: any) => void;
+  timeout: NodeJS.Timeout;
+}
 
-  constructor(private db: DatabaseService, private redis: RedisService) {}
+export class OCPPMessageHandler {
+  private readonly logger = Logger.getInstance();
+  private readonly pendingCalls = new Map<string, PendingCall>();
+
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly redis: RedisService
+  ) {}
+
+  // ==================== MESSAGE ROUTING ====================
 
   public async handleMessage(
     chargePointId: string,
     message: OCPPMessage,
     connection: ChargePointConnection
   ): Promise<any> {
-    const [messageTypeId, uniqueId, actionOrErrorCode, payload] =
-      message as any;
+    const [messageTypeId, uniqueId, actionOrErrorCode, payload] = message as any;
 
     switch (messageTypeId) {
       case MessageType.CALL:
@@ -55,16 +56,67 @@ export class OCPPMessageHandler {
         );
 
       case MessageType.CALLRESULT:
-        return this.handleCallResult(uniqueId, actionOrErrorCode);
+        this.handleCallResult(uniqueId, actionOrErrorCode);
+        return null;
 
       case MessageType.CALLERROR:
-        return this.handleCallError(uniqueId, actionOrErrorCode, payload);
+        this.handleCallError(uniqueId, actionOrErrorCode, payload);
+        return null;
 
       default:
         this.logger.error(`Unknown message type: ${messageTypeId}`);
         return null;
     }
   }
+
+  // ==================== PENDING CALLS MANAGEMENT ====================
+
+  public addPendingCall(
+    uniqueId: string,
+    resolve: (value: any) => void,
+    reject: (reason?: any) => void,
+    timeout: NodeJS.Timeout
+  ): void {
+    this.pendingCalls.set(uniqueId, { resolve, reject, timeout });
+  }
+
+  public removePendingCall(uniqueId: string): void {
+    const pending = this.pendingCalls.get(uniqueId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingCalls.delete(uniqueId);
+    }
+  }
+
+  public resolvePendingCall(uniqueId: string, response: any): void {
+    const pending = this.pendingCalls.get(uniqueId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pending.resolve(response);
+      this.pendingCalls.delete(uniqueId);
+    }
+  }
+
+  public rejectPendingCall(uniqueId: string, error: any): void {
+    const pending = this.pendingCalls.get(uniqueId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+      this.pendingCalls.delete(uniqueId);
+    }
+  }
+
+  private handleCallResult(uniqueId: string, payload: any): void {
+    this.logger.debug('Call result received:', payload);
+    this.resolvePendingCall(uniqueId, payload);
+  }
+
+  private handleCallError(uniqueId: string, errorCode: string, errorDescription: string): void {
+    this.logger.warn(`Call error: ${errorCode} - ${errorDescription}`);
+    this.rejectPendingCall(uniqueId, new Error(`${errorCode}: ${errorDescription}`));
+  }
+
+  // ==================== CALL HANDLER ====================
 
   private async handleCall(
     chargePointId: string,
@@ -73,17 +125,14 @@ export class OCPPMessageHandler {
     payload: any,
     connection: ChargePointConnection
   ): Promise<any> {
-    console.log({action, payload})
+    this.logger.debug(`Handling ${action} from ${chargePointId}`, payload);
+
     try {
       let response: any;
 
       switch (action) {
         case "BootNotification":
-          response = await this.handleBootNotification(
-            chargePointId,
-            payload,
-            connection
-          );
+          response = await this.handleBootNotification(chargePointId, payload, connection);
           break;
 
         case "Heartbeat":
@@ -91,43 +140,23 @@ export class OCPPMessageHandler {
           break;
 
         case "StatusNotification":
-          response = await this.handleStatusNotification(
-            chargePointId,
-            payload,
-            connection
-          );
+          response = await this.handleStatusNotification(chargePointId, payload, connection);
           break;
 
         case "MeterValues":
-          response = await this.handleMeterValues(
-            chargePointId,
-            payload,
-            connection
-          );
+          response = await this.handleMeterValues(chargePointId, payload, connection);
           break;
 
         case "StartTransaction":
-          response = await this.handleStartTransaction(
-            chargePointId,
-            payload,
-            connection
-          );
+          response = await this.handleStartTransaction(chargePointId, payload, connection);
           break;
 
         case "StopTransaction":
-          response = await this.handleStopTransaction(
-            chargePointId,
-            payload,
-            connection
-          );
+          response = await this.handleStopTransaction(chargePointId, payload, connection);
           break;
 
         case "Authorize":
-          response = await this.handleAuthorize(
-            chargePointId,
-            payload,
-            connection
-          );
+          response = await this.handleAuthorize(chargePointId, payload, connection);
           break;
 
         default:
@@ -154,24 +183,7 @@ export class OCPPMessageHandler {
     }
   }
 
-private handleCallResult(uniqueId: string, payload: any): void {
-  console.log({"Call result": payload})
-  const pendingCall = this.pendingCalls.get(uniqueId);
-  if (pendingCall) {
-    clearTimeout(pendingCall.timeout);
-    pendingCall.resolve(payload);
-    this.pendingCalls.delete(uniqueId);
-  }
-}
-
-private handleCallError(uniqueId: string, errorCode: string, errorDescription: string): void {
-  const pendingCall = this.pendingCalls.get(uniqueId);
-  if (pendingCall) {
-    clearTimeout(pendingCall.timeout);
-    pendingCall.reject(new Error(`${errorCode}: ${errorDescription}`));
-    this.pendingCalls.delete(uniqueId);
-  }
-}
+  // ==================== OCPP MESSAGE HANDLERS ====================
 
   private async handleBootNotification(
     chargePointId: string,
@@ -179,7 +191,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     connection: ChargePointConnection
   ): Promise<BootNotificationResponse> {
     this.logger.info(`Boot notification from ${chargePointId}:`, payload);
-    // Store charge point information in database
+
     await this.db.createOrUpdateChargePoint({
       id: chargePointId,
       vendor: payload.chargePointVendor,
@@ -191,12 +203,6 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       meterType: payload.meterType,
       meterSerialNumber: payload.meterSerialNumber,
     });
-
-    // Create default connector if it doesn't exist
-    // await this.db.createOrUpdateConnector(chargePointId, 1, {
-    //   type: "TYPE2",
-    //   status: "AVAILABLE",
-    // });
 
     connection.bootNotificationSent = true;
     connection.heartbeatInterval = 300; // 5 minutes
@@ -212,7 +218,6 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     chargePointId: string,
     connection: ChargePointConnection
   ): Promise<HeartbeatResponse> {
-    // Update last seen timestamp
     await this.db.updateChargePointStatus(chargePointId, true);
 
     return {
@@ -225,9 +230,8 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     payload: StatusNotificationRequest,
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
-    this.logger.info(`Status notification from ${chargePointId}:`, payload)
+    this.logger.info(`Status notification from ${chargePointId}:`, payload);
 
-    // Update connector status in database
     await this.db.updateConnectorStatus(
       chargePointId,
       payload.connectorId,
@@ -236,9 +240,11 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       payload.vendorErrorCode
     );
 
-    // Update connection's current data
-    connection.currentData!.status = payload.status;
-    connection.currentData!.connectorId = payload.connectorId;
+    // Update connection's current data if exists
+    if (connection.currentData) {
+      connection.currentData.status = payload.status;
+      connection.currentData.connectorId = payload.connectorId;
+    }
 
     // Handle alarms if there's an error
     if (payload.errorCode && payload.errorCode !== "NoError") {
@@ -250,9 +256,11 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
         message: payload.info || `Error: ${payload.errorCode}`,
       });
 
-      connection.currentData!.alarm = payload.errorCode;
-    } else {
-      connection.currentData!.alarm = null;
+      if (connection.currentData) {
+        connection.currentData.alarm = payload.errorCode;
+      }
+    } else if (connection.currentData) {
+      connection.currentData.alarm = null;
     }
 
     return {};
@@ -264,8 +272,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     connection: ChargePointConnection
   ): Promise<MeterValuesResponse> {
     this.logger.debug(`Meter values from ${chargePointId}:`, payload);
-    console.log({ MeterValue: payload });
-    // Process and store meter values
+    console.log('Meter values payload:', ...payload.meterValue);
     for (const meterValue of payload.meterValue) {
       const sampledValues = meterValue.sampledValue.map((sv) => ({
         value: sv.value,
@@ -276,7 +283,9 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
         location: sv.location,
         unit: sv.unit,
       }));
-      console.log({sampledValues})
+
+      this.logger.debug('Sampled values:', sampledValues);
+
       await this.db.saveMeterValues({
         transactionId: payload.transactionId,
         connectorId: payload.connectorId,
@@ -297,7 +306,6 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
     console.log({ StartTransaction: payload });
 
-    // Validate ID tag
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
     if (idTagValidation.status !== "ACCEPTED") {
@@ -310,10 +318,8 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       };
     }
 
-    // Generate transaction ID
     const transactionId = Math.floor(Math.random() * 1000000) + 1;
 
-    // Create transaction in database
     await this.db.createTransaction({
       transactionId,
       chargePointId,
@@ -324,16 +330,16 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       reservationId: payload.reservationId,
     });
 
-    // Update connector status
     await this.db.updateConnectorStatus(
       chargePointId,
       payload.connectorId,
       "CHARGING"
     );
 
-    // Update connection data
-    connection.currentData!.status = "CHARGING";
-    connection.currentData!.connected = true;
+    if (connection.currentData) {
+      connection.currentData.status = "CHARGING";
+      connection.currentData.connected = true;
+    }
 
     return {
       transactionId,
@@ -351,7 +357,6 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
   ): Promise<StopTransactionResponse> {
     this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
 
-    // Get transaction details
     const transaction = await this.db.getTransaction(payload.transactionId);
 
     if (!transaction) {
@@ -362,7 +367,6 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       };
     }
 
-    // Update transaction
     await this.db.stopTransaction(
       payload.transactionId,
       payload.meterStop,
@@ -370,19 +374,18 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
       payload.reason
     );
 
-    // Update connector status
     await this.db.updateConnectorStatus(
       chargePointId,
       transaction.connectorId,
       "AVAILABLE"
     );
 
-    // Update connection data
-    connection.currentData!.status = "AVAILABLE";
-    connection.currentData!.connected = false;
-    connection.currentData!.stopReason = payload.reason || null;
-    connection.currentData!.chargingEnergy =
-      payload.meterStop - transaction.meterStart;
+    if (connection.currentData) {
+      connection.currentData.status = "AVAILABLE";
+      connection.currentData.connected = false;
+      connection.currentData.stopReason = payload.reason || null;
+      connection.currentData.chargingEnergy = payload.meterStop - transaction.meterStart;
+    }
 
     // Process transaction data if provided
     if (payload.transactionData) {
@@ -431,6 +434,8 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     };
   }
 
+  // ==================== HELPERS ====================
+
   private getAlarmSeverity(
     errorCode: string
   ): "INFO" | "WARNING" | "ERROR" | "CRITICAL" {
@@ -451,18 +456,5 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     if (warningCodes.includes(errorCode)) return "WARNING";
 
     return "INFO";
-  }
-
-  public addPendingCall(
-    uniqueId: string,
-    resolve: (data: any) => void,
-    reject: (err: any) => void,
-    timeout: NodeJS.Timeout
-  ): void {
-    try {
-      this.pendingCalls.set(uniqueId, { resolve, reject, timeout });
-    } catch (err) {
-      reject(err); // if something fails when adding, reject immediately
-    }
   }
 }
