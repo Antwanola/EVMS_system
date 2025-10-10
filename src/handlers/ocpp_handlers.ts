@@ -304,6 +304,7 @@ export class OCPPMessageHandler {
     connection: ChargePointConnection
   ): Promise<StartTransactionResponse> {
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
+    console.log({ StartTransaction: payload });
 
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 

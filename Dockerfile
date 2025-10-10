@@ -1,61 +1,71 @@
 # -------------------
-# Build stage
+# Base builder stage
 # -------------------
-FROM node:20 AS builder
+FROM node:20-alpine AS base
 
 WORKDIR /usr/src/app
 
-# Copy package files
-COPY package*.json ./
-COPY tsconfig.json ./
+# Install system dependencies needed for building native modules
+RUN apk add --no-cache bash python3 g++ make openssl
 
-# Install dependencies
-RUN npm ci  && npm cache clean --force
+# Copy package and config files
+COPY package*.json tsconfig.json ./
 
-# Copy Prisma schema
+# Install dependencies (using ci for lockfile integrity)
+RUN npm ci
+
+# Copy Prisma schema and generate client
 COPY prisma ./prisma/
-
-# Generate Prisma client for Linux
 RUN npx prisma generate
 
-# Copy source code and build
+# Copy source
 COPY . .
+
+# -------------------
+# Build stage (for production)
+# -------------------
+FROM base AS builder
 RUN npm run build
 
 # -------------------
 # Runtime stage
 # -------------------
-FROM node:20-slim AS runner
-
-# Install OpenSSL (required for Prisma)
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+FROM node:20-alpine AS runner
 
 WORKDIR /usr/src/app
 
-# Copy package files
+RUN apk add --no-cache openssl
+
+# Copy from builder
 COPY --from=builder /usr/src/app/package*.json ./
-
-# Copy built application
-COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/prisma ./prisma
+COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /usr/src/app/dist ./dist
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Create logs directory with proper permissions BEFORE switching to non-root user
+RUN mkdir -p logs && chmod 755 logs
 
-# Generate Prisma client in the runtime environment
-RUN npx prisma generate
+# Non-root user for security
+RUN addgroup -S appuser && adduser -S appuser -G appuser
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Change ownership of the entire app directory including logs
 RUN chown -R appuser:appuser /usr/src/app
+
 USER appuser
 
-# Expose port
+# Environment variable toggle
+ARG NODE_ENV=production
+ENV NODE_ENV=$NODE_ENV
 EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-# Run migrations and start server
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
+# -------------------
+# Conditional command
+# -------------------
+# If NODE_ENV=development, run TS directly with ts-node + nodemon
+# Else, run the compiled JS version.
+CMD ["sh", "-c", "if [ \"$NODE_ENV\" = \"development\" ]; then npx nodemon --watch src -e ts --exec npx ts-node src/server.ts; else npx prisma migrate deploy && npm run start:prod; fi"]

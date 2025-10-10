@@ -54,16 +54,13 @@ export class APIGateway {
     this.router.post('/auth/refresh', this.authenticateUser.bind(this), this.refreshToken.bind(this));
 
     // Charge point routes
-    this.router.get('/charge-points', this.authenticateUser.bind(this), this.getChargePoints.bind(this));
-    this.router.get('/charge-points/:id', this.authenticateUser.bind(this), this.getChargePoint.bind(this));
-    this.router.get('/charge-points/:id/data', this.authenticateUser.bind(this), this.getChargePointData.bind(this));
-    this.router.get('/charge-points/:id/history', this.authenticateUser.bind(this), this.getChargePointHistory.bind(this));
-    this.router.get('/charge-points/:id/status', this.authenticateUser.bind(this), this.getChargePointStatus.bind(this));
-    this.router.get('/charge-points/:id/connectors', this.authenticateUser.bind(this), this.getChargePointConnectors.bind(this));
-    this.router.get('/charge-points/:id/connectors/:connectorId', this.authenticateUser.bind(this), this.getChargePointConnector.bind(this));
-
-    // Send message to charge point
-    this.router.post('/charge-points/:id/message', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.sendMessage.bind(this));
+    this.router.get('/charge-points',  this.getChargePoints.bind(this));
+    this.router.get('/charge-points/:id',  this.getChargePoint.bind(this));
+    this.router.get('/charge-points/:id/data',  this.getChargePointData.bind(this));
+    this.router.get('/charge-points/:id/history',  this.getChargePointHistory.bind(this));
+    this.router.get('/charge-points/:id/status',  this.getChargePointStatus.bind(this));
+    this.router.get('/charge-points/:id/connectors', this.getChargePointConnectors.bind(this))
+    this.router.post('/charge-points/:id/message', this.sendMessage.bind(this));
 
     // Real-time data routes
     this.router.get('/realtime/all', this.authenticateUser.bind(this), this.getAllRealtimeData.bind(this));
@@ -272,9 +269,8 @@ export class APIGateway {
     try {
       const chargePoints = await this.db.getAllChargePoints();
       const connectedIds = this.ocppServer.getConnectedChargePoints();
-    
       const enrichedChargePoints = chargePoints.map(cp => ({
-        ...cp,
+        chargePoint: cp,
         isConnected: connectedIds.includes(cp.id),
         connectorCount: this.ocppServer.getConnectorCount(cp.id),
       }));
@@ -483,8 +479,22 @@ export class APIGateway {
     }
   }
 
-  // ==================== CONTROL ENDPOINTS ====================
+  public async sendMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { action, payload } = req.body;
+      if (!action) {
+        return this.sendErrorResponse(res, 400, 'Action is required');
+      }
+      const result = await this.ocppServer.sendMessage(id, action, payload || {});
+      this.sendSuccessResponse(res, result);
+    } catch (error) {
+      this.logger.error('Error sending message to charge point:', error);
+      this.sendErrorResponse(res, 500, 'Failed to send message to charge point');
+    }
+  }
 
+  // Control endpoints
   private async remoteStartTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
     const schema = Joi.object({
       idTag: Joi.string().required(),

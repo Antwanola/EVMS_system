@@ -10,20 +10,16 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.myresolver.acme.email=oolayiwola@folti.io"
+      - "--certificatesresolvers.myresolver.acme.email=youremail@example.com"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
-      - "--api.dashboard=true"
-      - "--api.insecure=true"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "traefik_letsencrypt:/letsencrypt"
     networks:
-      - evms_system_app-network
-    restart: unless-stopped
+      - app-network
 
   ocpp-server:
     build:
@@ -31,7 +27,6 @@ services:
       dockerfile: Dockerfile
     container_name: ocpp-server
     environment:
-      - PORT=3000
       - JWT_SECRET=secretkey123
       - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ocpp
@@ -43,10 +38,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - evms_system_app-network
+      - app-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ocpp.rule=Host(`evms.folti.io`)"
+      - "traefik.http.routers.ocpp.rule=Host(`yourdomain.com`)"
       - "traefik.http.routers.ocpp.entrypoints=websecure"
       - "traefik.http.routers.ocpp.tls.certresolver=myresolver"
       - "traefik.http.services.ocpp.loadbalancer.server.port=3000"
@@ -69,7 +64,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - evms_system_app-network
+      - app-network
 
   redis:
     image: redis:7-alpine
@@ -83,7 +78,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - evms_system_app-network
+      - app-network
 
 volumes:
   postgres_data:
@@ -91,5 +86,5 @@ volumes:
   traefik_letsencrypt:
 
 networks:
-  evms_system_app-network:
+  app-network:
     driver: bridge
