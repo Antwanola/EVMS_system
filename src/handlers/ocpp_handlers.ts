@@ -295,6 +295,7 @@ private handleCallError(uniqueId: string, errorCode: string, errorDescription: s
     connection: ChargePointConnection
   ): Promise<StartTransactionResponse> {
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
+    console.log({ StartTransaction: payload });
 
     // Validate ID tag
     const idTagValidation = await this.db.validateIdTag(payload.idTag);

@@ -59,7 +59,7 @@ export class APIGateway {
     this.router.get('/charge-points/:id/history',  this.getChargePointHistory.bind(this));
     this.router.get('/charge-points/:id/status',  this.getChargePointStatus.bind(this));
     this.router.get('/charge-points/:id/connectors', this.getChargePointConnectors.bind(this))
-    this.router.post('/charge-points/:id/message',)
+    this.router.post('/charge-points/:id/message', this.sendMessage.bind(this));
 
     // Real-time data routes
     this.router.get('/realtime/all',  this.getAllRealtimeData.bind(this));
@@ -373,6 +373,21 @@ export class APIGateway {
     } catch (error) {
       this.logger.error('Error fetching real-time data:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch real-time data');
+    }
+  }
+
+  public async sendMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { action, payload } = req.body;
+      if (!action) {
+        return this.sendErrorResponse(res, 400, 'Action is required');
+      }
+      const result = await this.ocppServer.sendMessage(id, action, payload || {});
+      this.sendSuccessResponse(res, result);
+    } catch (error) {
+      this.logger.error('Error sending message to charge point:', error);
+      this.sendErrorResponse(res, 500, 'Failed to send message to charge point');
     }
   }
 

@@ -267,6 +267,50 @@ export class OCPPServer {
 //   }
 // }
 
+
+public async sendChangeConfiguration(
+  chargePointId: string,
+  key: string,
+  value: string,
+  clients: Map<string, WebSocket>
+): Promise<string> {
+  const client = clients.get(chargePointId);
+
+  if (!client || client.readyState !== client.OPEN) {
+    throw new Error(`Charge point ${chargePointId} is not connected`);
+  }
+
+  // Create a unique message ID
+  const messageId = uuidv4();
+
+  // OCPP 1.6J ChangeConfiguration message structure
+  const ocppMessage = [
+    2, // MessageTypeId for CALL
+    messageId,
+    "ChangeConfiguration",
+    {
+      key,
+      value
+    }
+  ];
+
+  try {
+    // Send message as JSON string
+    client.send(JSON.stringify(ocppMessage));
+    console.log(
+      `✅ Sent ChangeConfiguration to ${chargePointId} → ${key}=${value}`
+    );
+  } catch (error) {
+    console.error(
+      `❌ Failed to send ChangeConfiguration to ${chargePointId}:`,
+      error
+    );
+    throw error;
+  }
+
+  return messageId;
+}
+
   private processMeterValues(connection: ChargePointConnection, payload: any): void {
     if (!payload.meterValue || !Array.isArray(payload.meterValue)) return;
 
