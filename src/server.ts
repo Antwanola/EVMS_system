@@ -53,7 +53,7 @@ class Application {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        connectedChargePoints: this.ocppServer.getConnectedChargePoints().length
+        connectedChargePoints: this.ocppServer.getConnectedChargePoints()
       });
     });
   }
@@ -90,7 +90,7 @@ class Application {
     process.exit(0);
   }
 
-  public async start(port: number = parseInt(process.env.PORT || '3000')): Promise<void> {
+  public async start(port: number = parseInt(process.env.PORT || '3001')): Promise<void> {
     await this.initialize();
     
     this.server.listen(port, () => {
