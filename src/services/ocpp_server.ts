@@ -396,6 +396,125 @@ export class OCPPServer {
   }
 
   private processMeterValues(connectorData: ChargingStationData, payload: any): void {
+//   private async updateRealTimeData(
+//   chargePointId: string, 
+//   message: OCPPMessage, 
+//   connection: ChargePointConnection
+// ): Promise<void> {
+//   try {
+//     switch (message.action) {
+//       case 'StatusNotification':
+//         const connectorId = message.payload.connectorId || 1;
+//         const connectorData = connection.connectors.get(connectorId);
+//         console.log({connectorData})
+//        if (!connection.connectors.has(connectorId)) {
+//           connection.connectors.set(connectorId,
+//             this.getDefaultChargingData(chargePointId, connectorId)
+//           );
+//           this.logger.info(`Discovered new connector ${connectorId} for ${chargePointId}`);
+//         }
+//         break;
+      
+//       case 'MeterValues':
+//         const meterConnectorId = message.payload.connectorId || 1;
+//         const meterConnectorData = connection.connectors.get(meterConnectorId);
+//         if (meterConnectorData) {
+//           this.processMeterValues(meterConnectorData:, message.payload);
+//           connection.connectors.set(meterConnectorId, meterConnectorData);
+//         }
+//         break;
+
+//       case 'StartTransaction':
+//         const startConnectorId = message.payload.connectorId || 1;
+//         const startConnectorData = connection.connectors.get(startConnectorId);
+//         if (startConnectorData) {
+//           // startConnectorData.status = 'Charging';
+//           startConnectorData.connected = true;
+//           startConnectorData.timestamp = new Date();
+//           connection.connectors.set(startConnectorId, startConnectorData);
+//         }
+//         break;
+
+//       case 'StopTransaction':
+//         // Find connector by transaction ID or use connector 1 as fallback
+//         const stopConnectorId = message.payload.connectorId || 1;
+//         const stopConnectorData = connection.connectors.get(stopConnectorId);
+//         if (stopConnectorData) {
+//           // stopConnectorData.status = 'Available';
+//           stopConnectorData.connected = false;
+//           stopConnectorData.timestamp = new Date();
+//           connection.connectors.set(stopConnectorId, stopConnectorData);
+//         }
+//         break;
+//     }
+
+//     // Store all connector data in Redis
+//     const connectorsData = Array.from(connection.connectors.entries()).map(([id, data]) => ({
+//       // connectorId: id,
+//       ...data
+//     }));
+
+//     await this.redis.set(
+//       `chargepoint:${chargePointId}:connectors`,
+//       JSON.stringify(connectorsData),
+//       3600
+//     );
+
+//     // Store in database
+//     for (const [connectorId, connectorData] of connection.connectors) {
+//       await this.db.saveChargingData(connectorData);
+//     }
+
+//   } catch (error) {
+//     this.logger.error(`Error updating real-time data for ${chargePointId}:`, error);
+//   }
+// }
+
+
+public async sendChangeConfiguration(
+  chargePointId: string,
+  key: string,
+  value: string,
+  clients: Map<string, WebSocket>
+): Promise<string> {
+  const client = clients.get(chargePointId);
+
+  if (!client || client.readyState !== client.OPEN) {
+    throw new Error(`Charge point ${chargePointId} is not connected`);
+  }
+
+  // Create a unique message ID
+  const messageId = uuidv4();
+
+  // OCPP 1.6J ChangeConfiguration message structure
+  const ocppMessage = [
+    2, // MessageTypeId for CALL
+    messageId,
+    "ChangeConfiguration",
+    {
+      key,
+      value
+    }
+  ];
+
+  try {
+    // Send message as JSON string
+    client.send(JSON.stringify(ocppMessage));
+    console.log(
+      `✅ Sent ChangeConfiguration to ${chargePointId} → ${key}=${value}`
+    );
+  } catch (error) {
+    console.error(
+      `❌ Failed to send ChangeConfiguration to ${chargePointId}:`,
+      error
+    );
+    throw error;
+  }
+
+  return messageId;
+}
+
+  private processMeterValues(connection: ChargePointConnection, payload: any): void {
     if (!payload.meterValue || !Array.isArray(payload.meterValue)) return;
 
     payload.meterValue.forEach((meterValue: any) => {

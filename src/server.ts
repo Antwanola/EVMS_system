@@ -38,7 +38,7 @@ class Application {
   private setupMiddleware(): void {
     this.app.use(helmet());
     this.app.use(cors({
-      origin: process.env.ckfjsdnj || "http://localhost:3001",
+      origin: ["https://evms-frontend-7p1a.vercel.app", "http://localhost:3000"],
       credentials: true
     }));
     this.app.use(express.json({ limit: '10mb' }));
@@ -53,7 +53,7 @@ class Application {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        connectedChargePoints: this.ocppServer.getConnectedChargePoints().length
+        connectedChargePoints: this.ocppServer.getConnectedChargePoints()
       });
     });
   }
@@ -66,7 +66,7 @@ class Application {
     this.setupRoutes();
     
     this.ocppServer.initialize();
-    await InitialSeed()
+    // await InitialSeed()
 
     // Graceful shutdown
     process.on('SIGTERM', this.shutdown.bind(this));
@@ -90,7 +90,7 @@ class Application {
     process.exit(0);
   }
 
-  public async start(port: number = parseInt(process.env.PORT || '2000')): Promise<void> {
+  public async start(port: number = parseInt(process.env.PORT || '3001')): Promise<void> {
     await this.initialize();
     
     this.server.listen(port, () => {

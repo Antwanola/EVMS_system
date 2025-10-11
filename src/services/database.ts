@@ -245,7 +245,7 @@ export class DatabaseService {
         chargePointId: data.chargePointId,
         connectorId: connectorID,
         gunType: data.gunType,
-        status: ConnectorStatus[data.status] || ConnectorStatus.AVAILABLE,
+        status: ConnectorStatus[data.status] || ConnectorStatus.UNAVAILABLE,
         inputVoltage: data.inputVoltage,
         inputCurrent: data.inputCurrent,
         outputContactors: data.outputContactors,
