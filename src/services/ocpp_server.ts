@@ -390,8 +390,8 @@ export class OCPPServer {
     );
 
     // Store in database
-    for (const connectorData of connectorsData) {
-      await this.db.saveChargingData(connectorData);
+    for (const [connectorID, connectorData] of connectorsData) {
+      await this.db.saveChargingData( connectorID, connectorData);
     }
   }
 

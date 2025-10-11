@@ -239,11 +239,11 @@ export class DatabaseService {
   }
 
   // Charging Data Management
-  public async saveChargingData(data: ChargingStationData): Promise<ChargingData> {
+  public async saveChargingData(connectorID: number, data: ChargingStationData): Promise<ChargingData> {
     return this.prisma.chargingData.create({
       data: {
         chargePointId: data.chargePointId,
-        connectorId: data.connectorId,
+        connectorId: connectorID,
         gunType: data.gunType,
         status: ConnectorStatus[data.status] || ConnectorStatus.AVAILABLE,
         inputVoltage: data.inputVoltage,
