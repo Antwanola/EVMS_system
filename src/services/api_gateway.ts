@@ -59,8 +59,7 @@ export class APIGateway {
     this.router.get('/charge-points/:id/data',  this.getChargePointData.bind(this));
     this.router.get('/charge-points/:id/history',  this.getChargePointHistory.bind(this));
     this.router.get('/charge-points/:id/status',  this.getChargePointStatus.bind(this));
-    this.router.get('/charge-points/:id/connectors', this.getChargePointConnectors.bind(this))
-    this.router.post('/charge-points/:id/message', this.sendMessage.bind(this));
+      this.router.post('/charge-points/:id/message', this.sendMessage.bind(this));
 
     // Real-time data routes
     this.router.get('/realtime/all', this.authenticateUser.bind(this), this.getAllRealtimeData.bind(this));
@@ -365,44 +364,6 @@ export class APIGateway {
     }
   }
 
-  private async getChargePointConnectors(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-
-      const result = await this.ocppServer.discoverConnectors(id);
-
-      if (!result) {
-        return this.sendErrorResponse(
-          res,
-          404,
-          'Charge point not connected or no data available'
-        );
-      }
-
-      const { connectors, metadata, success } = result;
-
-      const summary = {
-        total: connectors.length,
-        available: connectors.filter((c) => c.status?.toLowerCase().includes('available')).length,
-        charging: connectors.filter((c) => c.status?.toLowerCase().includes('charging')).length,
-        faulted: connectors.filter((c) => c.status?.toLowerCase().includes('faulted')).length,
-        unavailable: connectors.filter((c) => c.status?.toLowerCase().includes('unavailable')).length,
-      };
-
-      this.sendSuccessResponse(res, {
-        chargePointId: id,
-        success,
-        connectorCount: metadata.totalConnectors,
-        metadata,
-        summary,
-        connectors,
-      });
-    } catch (error) {
-      this.logger.error('Error fetching charge point connectors:', error);
-      this.sendErrorResponse(res, 500, 'Failed to fetch charge point connectors');
-    }
-  }
-
   private async getChargePointConnector(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id, connectorId } = req.params;
@@ -421,29 +382,29 @@ export class APIGateway {
 
   // ==================== MESSAGING ENDPOINTS ====================
 
-  public async sendMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      action: Joi.string().required(),
-      payload: Joi.object().default({}),
-    });
+  // public async sendMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
+  //   const schema = Joi.object({
+  //     action: Joi.string().required(),
+  //     payload: Joi.object().default({}),
+  //   });
 
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
+  //   const { error, value } = schema.validate(req.body);
+  //   if (error) {
+  //     return this.sendErrorResponse(res, 400, error.details[0].message);
+  //   }
 
-    try {
-      const { id } = req.params;
-      const { action, payload } = value;
+  //   try {
+  //     const { id } = req.params;
+  //     const { action, payload } = value;
 
-      const result = await this.ocppServer.sendMessage(id, action, payload);
+  //     const result = await this.ocppServer.sendMessage(id, action, payload);
 
-      this.sendSuccessResponse(res, result);
-    } catch (error: any) {
-      this.logger.error('Error sending message:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to send message');
-    }
-  }
+  //     this.sendSuccessResponse(res, result);
+  //   } catch (error: any) {
+  //     this.logger.error('Error sending message:', error);
+  //     this.sendErrorResponse(res, 500, error.message || 'Failed to send message');
+  //   }
+  // }
 
   // ==================== REAL-TIME DATA ENDPOINTS ====================
 

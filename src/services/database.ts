@@ -150,7 +150,7 @@ export class DatabaseService {
         },
       },
       update: {
-        status: ConnectorStatus[normalisedStatus] || ConnectorStatus.AVAILABLE,
+        status: ConnectorStatus[normalisedStatus] || ConnectorStatus.UNAVAILABLE,
         errorCode,
         vendorErrorCode,
         lastUpdated: new Date(),
@@ -159,7 +159,7 @@ export class DatabaseService {
       create: {
       chargePointId,
       connectorId,
-      type: ConnectorType.TYPE2, // or infer from station if available
+      type: ConnectorType.GBT, // or infer from station if available
       status: ConnectorStatus[normalisedStatus] || ConnectorStatus.AVAILABLE,
       errorCode,
       lastUpdated: new Date(),

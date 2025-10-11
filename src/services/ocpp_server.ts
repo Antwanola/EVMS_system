@@ -72,6 +72,7 @@ export class OCPPServer {
 
     const connection = this.createConnection(chargePointId, ws);
     this.connections.set(chargePointId, connection);
+    console.log('Current connections:', Array.from(this.connections.keys()));
     
     this.logger.info(`Charge point ${chargePointId} connected with ${connection.numberOfConnectors} connectors`);
 
@@ -82,6 +83,7 @@ export class OCPPServer {
   private extractChargePointId(request: any): string | null {
     const url = new URL(request.url!, `http://${request.headers.host}`);
     const pathSegments = url.pathname.split('/').filter(Boolean);
+    console.log('Extracted path segments:', pathSegments[pathSegments.length - 1]);
     return pathSegments[pathSegments.length - 1] || null;
   }
 
@@ -112,24 +114,25 @@ export class OCPPServer {
   private async handleDisconnection(chargePointId: string): Promise<void> {
     const connection = this.connections.get(chargePointId);
 
-  if (connection) {
-    await this.setAllConnectorsOffline(chargePointId, connection);
-    this.connections.delete(chargePointId);
-    this.chargePointManager.unregisterChargePoint(chargePointId);
-    this.logger.info(`Charge point ${chargePointId} disconnected`);
+    if (connection) {
+      this.connections.delete(chargePointId);
+      this.chargePointManager.unregisterChargePoint(chargePointId);
+      this.logger.info(`Charge point ${chargePointId} disconnected`);
+    }
   }
-}
 
   private handleError(chargePointId: string, error: Error): void {
     this.logger.error(`WebSocket error for ${chargePointId}:`, error);
   }
 
-  private handlePong(chargePointId: string): void {
+  private handlePong(chargePointId: string): ChargePointConnection | null{
     const connection = this.connections.get(chargePointId);
     if (connection) {
       connection.isAlive = true;
       connection.lastSeen = new Date();
+      return connection
     }
+    return null;
   }
 
   private setupHeartbeatCheck(): void {
@@ -325,7 +328,6 @@ export class OCPPServer {
     return this.sendMessage(chargePointId, 'UnlockConnector', { connectorId });
   }
 
-  // ==================== REAL-TIME DATA PROCESSING ====================
 
   private async updateRealTimeData(
     chargePointId: string, 
@@ -333,16 +335,8 @@ export class OCPPServer {
     connection: ChargePointConnection
   ): Promise<void> {
     try {
-      const connectorId = message.payload?.connectorId || 1;
-
-      // Ensure connector exists
-      // if (!connection.connectors.has(connectorId)) {
-      //   connection.connectors.set(connectorId, this.getDefaultChargingData(chargePointId, connectorId));
-      //   this.logger.info(`Discovered new connector ${connectorId} for ${chargePointId}`);
-      // }
-
+      const connectorId = message.payload?.connectorId;
       const connectorData = connection.connectors.get(connectorId)!;
-
       // Update based on message type
       switch (message.action) {
         case 'StatusNotification':
@@ -376,184 +370,90 @@ export class OCPPServer {
     }
   }
 
-  private async persistConnectorData(
-    chargePointId: string, 
-    connection: ChargePointConnection
-  ): Promise<void> {
-    const connectorsData = Array.from(connection.connectors.entries());
+private async persistConnectorData(
+  chargePointId: string, 
+  connection: ChargePointConnection
+): Promise<void> {
+  // Ensure we have connectors to persist
+  if (!connection?.connectors || connection.connectors.size === 0) {
+    this.logger.warn(`No connectors found for charge point ${chargePointId}`);
+    return;
+  }
 
-    // Store in Redis
+  const connectorsData = Array.from(connection.connectors.entries());
+  this.logger.debug(`Persisting ${connectorsData.length} connectors for ${chargePointId}`);
+  console.log(`Persisting connectors for ${chargePointId}:`, connectorsData);
+  // Store in Redis
+  try {
     await this.redis.set(
       `chargepoint:${chargePointId}:connectors`,
       JSON.stringify(connectorsData),
       this.REDIS_TTL
     );
+  } catch (err) {
+    this.logger.error(`Failed to store connector data in Redis for ${chargePointId}`, err);
+  }
 
-    // Store in database
-    for (const [connectorID, connectorData] of connectorsData) {
-      await this.db.saveChargingData( connectorID, connectorData);
+  // Store in database
+  for (const [connectorID, connectorData] of connectorsData) {
+    if (!connectorData || !connectorData.chargePointId) {
+      this.logger.warn(
+        `Skipping invalid connector data for ${chargePointId}:${connectorID}`,
+        connectorData
+      );
+      continue;
+    }
+
+    try {
+      await this.db.saveChargingData(connectorID, connectorData);
+    } catch (err) {
+      this.logger.error(
+        `Database save failed for ${chargePointId}:${connectorID}`,
+        err
+      );
     }
   }
-
-  private processMeterValues(connectorData: ChargingStationData, payload: any): void {
-//   private async updateRealTimeData(
-//   chargePointId: string, 
-//   message: OCPPMessage, 
-//   connection: ChargePointConnection
-// ): Promise<void> {
-//   try {
-//     switch (message.action) {
-//       case 'StatusNotification':
-//         const connectorId = message.payload.connectorId || 1;
-//         const connectorData = connection.connectors.get(connectorId);
-//         console.log({connectorData})
-//        if (!connection.connectors.has(connectorId)) {
-//           connection.connectors.set(connectorId,
-//             this.getDefaultChargingData(chargePointId, connectorId)
-//           );
-//           this.logger.info(`Discovered new connector ${connectorId} for ${chargePointId}`);
-//         }
-//         break;
-      
-//       case 'MeterValues':
-//         const meterConnectorId = message.payload.connectorId || 1;
-//         const meterConnectorData = connection.connectors.get(meterConnectorId);
-//         if (meterConnectorData) {
-//           this.processMeterValues(meterConnectorData:, message.payload);
-//           connection.connectors.set(meterConnectorId, meterConnectorData);
-//         }
-//         break;
-
-//       case 'StartTransaction':
-//         const startConnectorId = message.payload.connectorId || 1;
-//         const startConnectorData = connection.connectors.get(startConnectorId);
-//         if (startConnectorData) {
-//           // startConnectorData.status = 'Charging';
-//           startConnectorData.connected = true;
-//           startConnectorData.timestamp = new Date();
-//           connection.connectors.set(startConnectorId, startConnectorData);
-//         }
-//         break;
-
-//       case 'StopTransaction':
-//         // Find connector by transaction ID or use connector 1 as fallback
-//         const stopConnectorId = message.payload.connectorId || 1;
-//         const stopConnectorData = connection.connectors.get(stopConnectorId);
-//         if (stopConnectorData) {
-//           // stopConnectorData.status = 'Available';
-//           stopConnectorData.connected = false;
-//           stopConnectorData.timestamp = new Date();
-//           connection.connectors.set(stopConnectorId, stopConnectorData);
-//         }
-//         break;
-//     }
-
-//     // Store all connector data in Redis
-//     const connectorsData = Array.from(connection.connectors.entries()).map(([id, data]) => ({
-//       // connectorId: id,
-//       ...data
-//     }));
-
-//     await this.redis.set(
-//       `chargepoint:${chargePointId}:connectors`,
-//       JSON.stringify(connectorsData),
-//       3600
-//     );
-
-//     // Store in database
-//     for (const [connectorId, connectorData] of connection.connectors) {
-//       await this.db.saveChargingData(connectorData);
-//     }
-
-//   } catch (error) {
-//     this.logger.error(`Error updating real-time data for ${chargePointId}:`, error);
-//   }
-// }
-
-
-public async sendChangeConfiguration(
-  chargePointId: string,
-  key: string,
-  value: string,
-  clients: Map<string, WebSocket>
-): Promise<string> {
-  const client = clients.get(chargePointId);
-
-  if (!client || client.readyState !== client.OPEN) {
-    throw new Error(`Charge point ${chargePointId} is not connected`);
-  }
-
-  // Create a unique message ID
-  const messageId = uuidv4();
-
-  // OCPP 1.6J ChangeConfiguration message structure
-  const ocppMessage = [
-    2, // MessageTypeId for CALL
-    messageId,
-    "ChangeConfiguration",
-    {
-      key,
-      value
-    }
-  ];
-
-  try {
-    // Send message as JSON string
-    client.send(JSON.stringify(ocppMessage));
-    console.log(
-      `✅ Sent ChangeConfiguration to ${chargePointId} → ${key}=${value}`
-    );
-  } catch (error) {
-    console.error(
-      `❌ Failed to send ChangeConfiguration to ${chargePointId}:`,
-      error
-    );
-    throw error;
-  }
-
-  return messageId;
 }
 
-  private processMeterValues(connection: ChargePointConnection, payload: any): void {
+
+  private processMeterValues(connectorData: ChargingStationData, payload: any): void {
     if (!payload.meterValue || !Array.isArray(payload.meterValue)) return;
 
     payload.meterValue.forEach((meterValue: any) => {
       if (!meterValue.sampledValue) return;
 
       meterValue.sampledValue.forEach((sample: any) => {
-        const value = parseFloat(sample.value);
-
         switch (sample.measurand) {
           case 'Voltage':
             if (sample.location === 'Inlet') {
-              connectorData.inputVoltage = value;
+              connectorData.inputVoltage = parseFloat(sample.value);
             } else if (sample.location === 'Outlet') {
-              connectorData.outputVoltage = value;
+              connectorData.outputVoltage = parseFloat(sample.value);
             }
             break;
           
           case 'Current.Import':
             if (sample.location === 'Inlet') {
-              connectorData.inputCurrent = value;
+              connectorData.inputCurrent = parseFloat(sample.value);
             } else {
-              connectorData.demandCurrent = value;
+              connectorData.demandCurrent = parseFloat(sample.value);
             }
             break;
           
           case 'Energy.Active.Import.Register':
-            connectorData.chargingEnergy = value;
+            connectorData.chargingEnergy = parseFloat(sample.value);
             break;
           
           case 'Power.Active.Import':
-            connectorData.outputEnergy = value;
+            connectorData.outputEnergy = parseFloat(sample.value);
             break;
           
           case 'Temperature':
-            connectorData.gunTemperature = value;
+            connectorData.gunTemperature = parseFloat(sample.value);
             break;
           
           case 'SoC':
-            connectorData.stateOfCharge = value;
+            connectorData.stateOfCharge = parseFloat(sample.value);
             break;
         }
       });
@@ -562,178 +462,10 @@ public async sendChangeConfiguration(
     connectorData.timestamp = new Date();
   }
 
-  // ==================== CONNECTOR DISCOVERY ====================
 
-  public async discoverConnectors(chargePointId: string): Promise<ConnectorDiscoveryResult | null> {
-    const connection = this.connections.get(chargePointId);
-    
-    if (!connection) {
-      this.logger.warn(`Charge point ${chargePointId} not connected`);
-      return null;
-    }
+ 
 
-    const errors: string[] = [];
-    let discoveryMethod = "unknown";
-    let configuredCount: number | undefined;
-    let configResponse: any;
 
-    try {
-      this.logger.info(`Starting connector discovery for ${chargePointId}`);
-
-      // Step 1: Get NumberOfConnectors from configuration
-      configuredCount = await this.tryGetConnectorCount(chargePointId, connection, errors);
-      if (configuredCount) {
-        configResponse = { configuredCount };
-        discoveryMethod = "GetConfiguration";
-      }
-
-      // Step 2: Trigger StatusNotification for discovery
-      await this.triggerConnectorDiscovery(chargePointId, configuredCount, errors);
-
-      // Step 3: Trigger MeterValues
-      await this.triggerMeterValues(connection, errors);
-
-      // Step 4: Fallback to probing common IDs
-      if (connection.connectors.size === 0 && !configuredCount) {
-        await this.probeCommonConnectorIds(chargePointId, errors);
-        discoveryMethod = "probe_common_ids";
-      }
-
-      // Compile results
-      const finalConnectors = Array.from(connection.connectors.values());
-      const finalCount = finalConnectors.length;
-
-      if (finalCount > 0 && discoveryMethod === "unknown") {
-        discoveryMethod = "passive_monitoring";
-      }
-
-      if (configuredCount && finalCount !== configuredCount) {
-        errors.push(`Connector count mismatch: configured=${configuredCount}, discovered=${finalCount}`);
-      }
-
-      this.logger.info(`Connector discovery complete for ${chargePointId}: ${finalCount} connectors found`);
-
-      return {
-        success: finalCount > 0,
-        connectors: finalConnectors,
-        metadata: {
-          totalConnectors: finalCount,
-          discoveryMethod,
-          configuredCount,
-          discoveredCount: finalCount,
-          lastUpdated: new Date(),
-          configResponse,
-          errors: errors.length > 0 ? errors : undefined,
-        },
-      };
-
-    } catch (error: any) {
-      this.logger.error(`Error in connector discovery for ${chargePointId}:`, error);
-      
-      const fallbackConnectors = Array.from(connection.connectors.values());
-      return {
-        success: fallbackConnectors.length > 0,
-        connectors: fallbackConnectors,
-        metadata: {
-          totalConnectors: fallbackConnectors.length,
-          discoveryMethod: "error_fallback",
-          configuredCount,
-          discoveredCount: fallbackConnectors.length,
-          lastUpdated: new Date(),
-          configResponse,
-          errors: [...errors, `Discovery error: ${error?.message ?? error}`],
-        },
-      };
-    }
-  }
-
-  private async tryGetConnectorCount(
-    chargePointId: string, 
-    connection: ChargePointConnection, 
-    errors: string[]
-  ): Promise<number | undefined> {
-    try {
-      const response = await this.getConfiguration(chargePointId, ['NumberOfConnectors']);
-      
-      if (response?.configurationKey) {
-        const connectorConfig = response.configurationKey.find(
-          (config: { key: string; value?: string }) => config.key === "NumberOfConnectors"
-        );
-
-        if (connectorConfig?.value) {
-          const count = parseInt(connectorConfig.value, 10);
-          connection.numberOfConnectors = count;
-
-          for (let i = 1; i <= count; i++) {
-            if (!connection.connectors.has(i)) {
-              connection.connectors.set(i, this.getDefaultChargingData(chargePointId, i));
-            }
-          }
-
-          return count;
-        }
-      }
-    } catch (error: any) {
-      errors.push(`GetConfiguration failed: ${error?.message ?? error}`);
-      this.logger.debug(`GetConfiguration failed for ${chargePointId}: ${error}`);
-    }
-
-    return undefined;
-  }
-
-  private async triggerConnectorDiscovery(
-    chargePointId: string, 
-    configuredCount: number | undefined, 
-    errors: string[]
-  ): Promise<void> {
-    try {
-      await this.getStatusNotification(chargePointId);
-      await this.delay(2000);
-    } catch (error: any) {
-      errors.push(`TriggerMessage (all) failed: ${error?.message ?? error}`);
-    }
-
-    if (configuredCount) {
-      const triggerPromises = [];
-      for (let i = 1; i <= configuredCount; i++) {
-        triggerPromises.push(
-          this.getStatusNotification(chargePointId, i).catch((error: any) => {
-            errors.push(`TriggerMessage connector ${i} failed: ${error?.message ?? error}`);
-          })
-        );
-      }
-      await Promise.allSettled(triggerPromises);
-      await this.delay(3000);
-    }
-  }
-
-  private async triggerMeterValues(connection: ChargePointConnection, errors: string[]): Promise<void> {
-    if (connection.connectors.size === 0) return;
-
-    const meterPromises = [];
-    for (const connectorId of connection.connectors.keys()) {
-      meterPromises.push(
-        this.getMeterValues(connection.id, connectorId).catch(() => {})
-      );
-    }
-
-    await Promise.allSettled(meterPromises);
-    await this.delay(1500);
-  }
-
-  private async probeCommonConnectorIds(chargePointId: string, errors: string[]): Promise<void> {
-    const commonIds = [1, 2, 3, 4];
-
-    for (const id of commonIds) {
-      try {
-        await this.getStatusNotification(chargePointId, id);
-      } catch {
-        break;
-      }
-    }
-
-    await this.delay(2000);
-  }
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -804,50 +536,5 @@ public async sendChangeConfiguration(
       }
     };
   }
-
-  /**
- * Mark all connectors of a charge point as Offline
- */
-private async setAllConnectorsOffline(chargePointId: string, connection: ChargePointConnection): Promise<void> {
-  connection.connectors.forEach((connectorData, connectorId) => {
-    connectorData.status = "Offline" as any;
-    connectorData.connected = false;
-    connectorData.timestamp = new Date();
-    connection.connectors.set(connectorId, connectorData);
-  });
-
-  try {
-    await this.persistConnectorData(chargePointId, connection);
-    this.logger.info(`All connectors for ${chargePointId} set to Offline`);
-  } catch (err) {
-    this.logger.error(`Failed to persist offline status for ${chargePointId}:`, err);
-  }
-}
-
-
-  // ==================== HELPERS ====================
-
-  private getDefaultChargingData(chargePointId: string, connectorId: number): ChargingStationData {
-    return {
-      chargePointId,
-      connectorId,
-      gunType: 'TYPE2' as any,
-      status: 'Available' as any,
-      inputVoltage: 0,
-      inputCurrent: 0,
-      outputContactors: false,
-      outputVoltage: 0,
-      outputEnergy: 0,
-      chargingEnergy: 0,
-      alarm: null,
-      stopReason: null,
-      connected: false,
-      gunTemperature: 25,
-      stateOfCharge: 0,
-      chargeTime: 0,
-      remainingTime: 0,
-      demandCurrent: 0,
-      timestamp: new Date()
-    };
-  }
+ 
 }
