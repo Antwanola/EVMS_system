@@ -231,7 +231,9 @@ export class OCPPMessageHandler {
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
     this.logger.info(`Status notification from ${chargePointId}:`, payload);
-
+//TODO: get connections from ocpp server
+const connections = await this.redis.get(`connection:${chargePointId}`);
+console.log('Connections from Redis:', {connections});
     await this.db.updateConnectorStatus(
       chargePointId,
       payload.connectorId,
