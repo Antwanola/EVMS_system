@@ -276,8 +276,8 @@ console.log('All Connections:', getAllConnections.currentData);
     connection: ChargePointConnection
   ): Promise<MeterValuesResponse> {
     this.logger.debug(`Meter values from ${chargePointId}:`, payload);
-    console.log('Meter values payload:', payload);
-    for (const meterValue of payload.meterValue) {
+    console.log('Meter values payload:', payload.sampledValue);
+    for (const meterValue of payload.sampledValue) {
       const sampledValues = meterValue.sampledValue.map((sv) => ({
         value: sv.value,
         context: sv.context,
@@ -289,6 +289,7 @@ console.log('All Connections:', getAllConnections.currentData);
       }));
 
       this.logger.debug('Sampled values:', sampledValues);
+      console.log('Sampled values:', sampledValues)
 
       await this.db.saveMeterValues({
         transactionId: payload.transactionId,
