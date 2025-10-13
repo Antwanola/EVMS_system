@@ -1,4 +1,5 @@
 // src/handlers/ocpp-message-handler.ts
+import { OCPPServer } from "../services/ocpp_server";
 import { Logger } from "../Utils/logger";
 import { DatabaseService } from "../services/database";
 import { RedisService } from "../services/redis";
@@ -33,7 +34,7 @@ export class OCPPMessageHandler {
 
   constructor(
     private readonly db: DatabaseService,
-    private readonly redis: RedisService
+    private readonly redis: RedisService,
   ) {}
 
   // ==================== MESSAGE ROUTING ====================
@@ -230,10 +231,10 @@ export class OCPPMessageHandler {
     payload: StatusNotificationRequest,
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
-    this.logger.info(`Status notification from ${chargePointId}:`, payload);
+    this.logger.info(`Status notification from ${chargePointId}:`, {payload});
 //TODO: get connections from ocpp server
-const connections = await this.redis.get(`connection:${chargePointId}`);
-console.log('Connections from Redis:', {connections});
+const getAllConnections = connection
+console.log('All Connections:', getAllConnections.currentData);
     await this.db.updateConnectorStatus(
       chargePointId,
       payload.connectorId,
@@ -243,9 +244,10 @@ console.log('Connections from Redis:', {connections});
     );
 
     // Update connection's current data if exists
-    if (connection.currentData) {
-      connection.currentData.status = payload.status;
-      connection.currentData.connectorId = payload.connectorId;
+    if (getAllConnections.currentData) {
+      getAllConnections.currentData.status = payload.status;
+      getAllConnections.currentData.connectorId = payload.connectorId;
+      console.log('Current Data before update:', getAllConnections.currentData);
     }
 
     // Handle alarms if there's an error
@@ -274,7 +276,7 @@ console.log('Connections from Redis:', {connections});
     connection: ChargePointConnection
   ): Promise<MeterValuesResponse> {
     this.logger.debug(`Meter values from ${chargePointId}:`, payload);
-    console.log('Meter values payload:', ...payload.meterValue);
+    console.log('Meter values payload:', payload);
     for (const meterValue of payload.meterValue) {
       const sampledValues = meterValue.sampledValue.map((sv) => ({
         value: sv.value,
