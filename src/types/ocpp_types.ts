@@ -111,7 +111,7 @@ export interface StatusNotificationRequest {
 export interface MeterValuesRequest {
   connectorId: number;
   transactionId?: number;
-  meterValue: MeterValue[];
+  sampledValue: MeterValue[];
 }
 
 export interface StartTransactionRequest {
