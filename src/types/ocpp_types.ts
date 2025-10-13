@@ -231,7 +231,16 @@ export interface ChargePointConnection {
   meters?: Map<string, MeterData>; // Meter ID -> Meter readings
   meterConfiguration?: MeterConfiguration;
 }
-
+ export interface ConnectorStatus {
+  connectorId: number;
+  ChargePointId: string;
+  status: ChargePointStatus;
+  timestamp: Date;
+  currentTransactionID?: number;
+  meterValue?: MeterValue[];
+  errorCode?: string;
+  vendorErrorCode?: string;
+ }
 
 interface MeterData {
   meterId: string;

@@ -97,7 +97,7 @@ export class OCPPServer {
       lastSeen: new Date(),
       bootNotificationSent: false,
       heartbeatInterval: 300000,
-      currentData: null,
+      currentData: this.getDefaultChargingData(chargePointId, 1),
       connectors,
       numberOfConnectors: connectors.size,
       meters: new Map<string, any>()
@@ -230,6 +230,7 @@ export class OCPPServer {
       }
     });
   }
+
 
   // ==================== TRIGGER MESSAGE API ====================
 
@@ -463,7 +464,11 @@ private async persistConnectorData(
   }
 
 
- 
+  public getChargePointData(chargePointId: string): ChargingStationData | null {
+    const connection = this.connections.get(chargePointId);
+   
+    return connection ? connection.currentData! : null;
+  }
 
 
 
@@ -534,6 +539,31 @@ private async persistConnectorData(
         connectorIds,
         lastSeen: connection.lastSeen
       }
+    };
+  }
+
+    private getDefaultChargingData(chargePointId: string, connectorId: number): ChargingStationData {
+    this.triggerStatusForAll()
+    return {
+      chargePointId,
+      connectorId,
+      gunType: 'GBT' as any,
+      status: 'Available' as any,
+      inputVoltage: 0,
+      inputCurrent: 0,
+      outputContactors: false,
+      outputVoltage: 0,
+      outputEnergy: 0,
+      chargingEnergy: 0,
+      alarm: null,
+      stopReason: null,
+      connected: false,
+      gunTemperature: 25,
+      stateOfCharge: 0,
+      chargeTime: 0,
+      remainingTime: 0,
+      demandCurrent: 0,
+      timestamp: new Date()
     };
   }
  
