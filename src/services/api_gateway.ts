@@ -10,25 +10,26 @@ import { DatabaseService } from '../services/database';
 import { RedisService } from '../services/redis';
 import { APIResponse, APIUser } from '../types/ocpp_types';
 
+
+
 interface AuthenticatedRequest extends Request {
   user?: APIUser;
 }
 
 export class APIGateway {
-  private readonly router: Router;
-  private readonly logger = Logger.getInstance();
+  private router: Router;
+  private logger = Logger.getInstance();
   private rateLimiter?: RateLimiterRedis;
 
   constructor(
-    private readonly ocppServer: OCPPServer,
-    private readonly db: DatabaseService,
-    private readonly redis?: RedisService
+    private ocppServer: OCPPServer,
+    private db: DatabaseService,
+    private redis?: RedisService
   ) {
     this.router = Router();
-    if (redis) {
-      this.setupRateLimiter();
-    }
+    // this.setupRateLimiter();
     this.setupRoutes();
+    
   }
 
   private setupRateLimiter(): void {
@@ -44,31 +45,30 @@ export class APIGateway {
   private setupRoutes(): void {
     // Apply rate limiting middleware
     this.router.use(this.rateLimitMiddleware.bind(this));
-
-    // Health check (public)
-    this.router.get('/health', this.healthCheck.bind(this));
-
-    // Authentication routes (public)
+//this.authenticateUser.bind(this),
+//this.requireRole(['ADMIN']),
+    // Authentication routes
     this.router.post('/auth/login', this.login.bind(this));
-    this.router.post('/auth/register', this.register.bind(this));
-    this.router.post('/auth/refresh', this.authenticateUser.bind(this), this.refreshToken.bind(this));
-
+    this.router.post('/auth/register',  this.register.bind(this));
+    this.router.post('/auth/refresh', this.refreshToken.bind(this));
+//this.authenticateUser.bind(this)
     // Charge point routes
     this.router.get('/charge-points',  this.getChargePoints.bind(this));
     this.router.get('/charge-points/:id',  this.getChargePoint.bind(this));
     this.router.get('/charge-points/:id/data',  this.getChargePointData.bind(this));
     this.router.get('/charge-points/:id/history',  this.getChargePointHistory.bind(this));
     this.router.get('/charge-points/:id/status',  this.getChargePointStatus.bind(this));
-      this.router.post('/charge-points/:id/message', this.sendMessage.bind(this));
+    this.router.get('/charge-points/:id/connectors', this.getChargePointConnectors.bind(this))
+    this.router.post('/charge-points/:id/message', this.sendMessage.bind(this));
 
     // Real-time data routes
-    this.router.get('/realtime/all', this.authenticateUser.bind(this), this.getAllRealtimeData.bind(this));
-    this.router.get('/realtime/:chargePointId', this.authenticateUser.bind(this), this.getRealtimeData.bind(this));
+    this.router.get('/realtime/all',  this.getAllRealtimeData.bind(this));
+    this.router.get('/realtime/:chargePointId',  this.getRealtimeData.bind(this));
 
     // Transaction routes
     this.router.get('/transactions', this.authenticateUser.bind(this), this.getTransactions.bind(this));
-    this.router.get('/transactions/active', this.authenticateUser.bind(this), this.getActiveTransactions.bind(this));
     this.router.get('/transactions/:id', this.authenticateUser.bind(this), this.getTransaction.bind(this));
+    this.router.get('/transactions/active', this.authenticateUser.bind(this), this.getActiveTransactions.bind(this));
 
     // Control routes (requires higher permissions)
     this.router.post('/charge-points/:id/remote-start', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStartTransaction.bind(this));
@@ -77,7 +77,8 @@ export class APIGateway {
     this.router.post('/charge-points/:id/unlock', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.unlockConnector.bind(this));
 
     // Configuration routes
-    this.router.get('/charge-points/:id/configuration', this.authenticateUser.bind(this), this.getConfiguration.bind(this));
+    // this.authenticateUser.bind(this),
+    this.router.get('/charge-points/:id/configuration',  this.getConfiguration.bind(this));
     this.router.post('/charge-points/:id/configuration', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.changeConfiguration.bind(this));
 
     // Alarm routes
@@ -93,10 +94,12 @@ export class APIGateway {
     this.router.post('/users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.createUser.bind(this));
     this.router.put('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.updateUser.bind(this));
     this.router.delete('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.deleteUser.bind(this));
+
+    // Health check
+    this.router.get('/health', this.healthCheck.bind(this));
   }
 
-  // ==================== MIDDLEWARE ====================
-
+  // Middleware
   private async rateLimitMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!this.rateLimiter) {
       return next();
@@ -113,6 +116,7 @@ export class APIGateway {
   private async authenticateUser(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '') || req.headers['x-api-key'] as string;
+      console.log(token)
       
       if (!token) {
         return this.sendErrorResponse(res, 401, 'Authentication required');
@@ -124,14 +128,14 @@ export class APIGateway {
       if (token.startsWith('eyJ')) {
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+          console.log(`decoded: ${JSON.stringify(decoded)}`);
           user = await this.db.getUserByEmail(decoded.email);
         } catch (error) {
           // Invalid JWT, continue to API key check
-          this.logger.debug('JWT verification failed, trying API key');
         }
       }
 
-      // Try API key if JWT failed
+      // Try API key
       if (!user) {
         user = await this.db.getUserByApiKey(token);
       }
@@ -157,11 +161,10 @@ export class APIGateway {
     };
   }
 
-  // ==================== AUTHENTICATION ENDPOINTS ====================
-
+  // Authentication endpoints
   private async login(req: Request, res: Response): Promise<void> {
     const schema = Joi.object({
-      email: Joi.string().email().required(),
+      email: Joi.string().required(),
       password: Joi.string().required(),
     });
 
@@ -171,14 +174,15 @@ export class APIGateway {
     }
 
     try {
-      console.log('email:', value.email);
-      const user = await this.db.getUserByEmail(value.email);
+      const user  = await this.db.getUserByEmail(value.email);
+      console.log(user)
       
       if (!user || !user.isActive) {
         return this.sendErrorResponse(res, 401, 'Invalid credentials');
       }
 
       const isPasswordValid = await bcrypt.compare(value.password, user.password);
+      console.log(isPasswordValid)
       if (!isPasswordValid) {
         return this.sendErrorResponse(res, 401, 'Invalid credentials');
       }
@@ -194,9 +198,8 @@ export class APIGateway {
         user: {
           id: user.id,
           username: user.username,
-          email: user.email,
           role: user.role,
-          permissions: user.permissions,
+          permissions: user?.permissions,
         },
       });
     } catch (error) {
@@ -243,27 +246,12 @@ export class APIGateway {
     }
   }
 
-  private async refreshToken(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      if (!req.user) {
-        return this.sendErrorResponse(res, 401, 'Authentication required');
-      }
-
-      const newToken = jwt.sign(
-        { id: req.user.id, email: req.user.email, role: req.user.role, username: req.user.username },
-        process.env.JWT_SECRET!,
-        { expiresIn: '24h' }
-      );
-
-      this.sendSuccessResponse(res, { token: newToken });
-    } catch (error) {
-      this.logger.error('Token refresh error:', error);
-      this.sendErrorResponse(res, 500, 'Token refresh failed');
-    }
+  private async refreshToken(req: Request, res: Response): Promise<void> {
+    // Implementation for token refresh
+    this.sendSuccessResponse(res, { message: 'Token refresh endpoint' });
   }
 
-  // ==================== CHARGE POINT ENDPOINTS ====================
-
+  // Charge point endpoints
   private async getChargePoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const chargePoints = await this.db.getAllChargePoints();
@@ -271,7 +259,7 @@ export class APIGateway {
       const enrichedChargePoints = chargePoints.map(cp => ({
         chargePoint: cp,
         isConnected: connectedIds.includes(cp.id),
-        connectorCount: this.ocppServer.getConnectorCount(cp.id),
+        realTimeData: this.ocppServer.getChargePointData(cp.id),
       }));
 
       this.sendSuccessResponse(res, enrichedChargePoints);
@@ -291,14 +279,12 @@ export class APIGateway {
       }
 
       const isConnected = this.ocppServer.getConnectedChargePoints().includes(id);
-      const connectorCount = this.ocppServer.getConnectorCount(id);
-      const connectors = this.ocppServer.getAllChargingConnectors(id);
+      const realTimeData = this.ocppServer.getChargePointData(id);
 
       this.sendSuccessResponse(res, {
-        ...chargePoint,
+        chargePoint,
         isConnected,
-        connectorCount,
-        connectors: connectors || [],
+        realTimeData,
       });
     } catch (error) {
       this.logger.error('Error fetching charge point:', error);
@@ -309,17 +295,13 @@ export class APIGateway {
   private async getChargePointData(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const connectors = this.ocppServer.getAllChargingConnectors(id);
+      const data = this.ocppServer.getChargePointData(id);
       
-      if (!connectors || connectors.length === 0) {
+      if (!data) {
         return this.sendErrorResponse(res, 404, 'Charge point not connected or no data available');
       }
 
-      this.sendSuccessResponse(res, {
-        chargePointId: id,
-        connectorCount: connectors.length,
-        connectors,
-      });
+      this.sendSuccessResponse(res, data);
     } catch (error) {
       this.logger.error('Error fetching charge point data:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch charge point data');
@@ -329,7 +311,7 @@ export class APIGateway {
   private async getChargePointHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { startDate, endDate, limit = '1000', connectorId } = req.query;
+      const { startDate, endDate, limit = '1000', connectorId } = req.body;
 
       const history = await this.db.getChargingDataHistory(
         id,
@@ -350,13 +332,14 @@ export class APIGateway {
     try {
       const { id } = req.params;
       const isConnected = this.ocppServer.getConnectedChargePoints().includes(id);
-      const connectors = this.ocppServer.getAllChargingConnectors(id);
+      const data = this.ocppServer.getChargePointData(id);
       
       this.sendSuccessResponse(res, {
         chargePointId: id,
         isConnected,
-        connectorCount: connectors?.length || 0,
-        connectors: connectors || [],
+        status: data?.status || 'UNAVAILABLE',
+        lastSeen: data?.timestamp || null,
+        connectorData: data,
       });
     } catch (error) {
       this.logger.error('Error fetching charge point status:', error);
@@ -364,53 +347,10 @@ export class APIGateway {
     }
   }
 
-  private async getChargePointConnector(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { id, connectorId } = req.params;
-      const connector = this.ocppServer.getChargePointConnector(id, parseInt(connectorId));
-      
-      if (!connector) {
-        return this.sendErrorResponse(res, 404, 'Connector not found or charge point not connected');
-      }
-
-      this.sendSuccessResponse(res, connector);
-    } catch (error) {
-      this.logger.error('Error fetching connector:', error);
-      this.sendErrorResponse(res, 500, 'Failed to fetch connector');
-    }
-  }
-
-  // ==================== MESSAGING ENDPOINTS ====================
-
-  // public async sendMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
-  //   const schema = Joi.object({
-  //     action: Joi.string().required(),
-  //     payload: Joi.object().default({}),
-  //   });
-
-  //   const { error, value } = schema.validate(req.body);
-  //   if (error) {
-  //     return this.sendErrorResponse(res, 400, error.details[0].message);
-  //   }
-
-  //   try {
-  //     const { id } = req.params;
-  //     const { action, payload } = value;
-
-  //     const result = await this.ocppServer.sendMessage(id, action, payload);
-
-  //     this.sendSuccessResponse(res, result);
-  //   } catch (error: any) {
-  //     this.logger.error('Error sending message:', error);
-  //     this.sendErrorResponse(res, 500, error.message || 'Failed to send message');
-  //   }
-  // }
-
-  // ==================== REAL-TIME DATA ENDPOINTS ====================
-
+  // Real-time data endpoints
   private async getAllRealtimeData(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const allData = this.ocppServer.getAllChargePointsConnectorData();
+      const allData = this.ocppServer.getAllChargePointsData();
       const dataObject = Object.fromEntries(allData);
       
       this.sendSuccessResponse(res, dataObject);
@@ -423,17 +363,13 @@ export class APIGateway {
   private async getRealtimeData(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { chargePointId } = req.params;
-      const connectors = this.ocppServer.getAllChargingConnectors(chargePointId);
+      const data = this.ocppServer.getChargePointData(chargePointId);
       
-      if (!connectors || connectors.length === 0) {
+      if (!data) {
         return this.sendErrorResponse(res, 404, 'No real-time data available for this charge point');
       }
 
-      this.sendSuccessResponse(res, {
-        chargePointId,
-        connectorCount: connectors.length,
-        connectors,
-      });
+      this.sendSuccessResponse(res, data);
     } catch (error) {
       this.logger.error('Error fetching real-time data:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch real-time data');
@@ -457,109 +393,69 @@ export class APIGateway {
 
   // Control endpoints
   private async remoteStartTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      idTag: Joi.string().required(),
-      connectorId: Joi.number().integer().min(1).required(),
-      chargingProfile: Joi.object().optional(),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
       const { id } = req.params;
-      const result = await this.ocppServer.remoteStartTransaction(
-        id,
-        value.connectorId,
-        value.idTag,
-        value.chargingProfile
-      );
+      const { idTag, connectorId } = req.body;
+
+      const result = await this.ocppServer.sendMessage(id, 'RemoteStartTransaction', {
+        idTag,
+        connectorId,
+      });
 
       this.sendSuccessResponse(res, result);
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error('Error starting remote transaction:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to start remote transaction');
+      this.sendErrorResponse(res, 500, 'Failed to start remote transaction');
     }
   }
 
   private async remoteStopTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      transactionId: Joi.number().integer().required(),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
       const { id } = req.params;
-      const result = await this.ocppServer.remoteStopTransaction(id, value.transactionId);
+      const { transactionId } = req.body;
+
+      const result = await this.ocppServer.sendMessage(id, 'RemoteStopTransaction', {
+        transactionId,
+      });
 
       this.sendSuccessResponse(res, result);
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error('Error stopping remote transaction:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to stop remote transaction');
+      this.sendErrorResponse(res, 500, 'Failed to stop remote transaction');
     }
   }
 
   private async resetChargePoint(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      type: Joi.string().valid('Hard', 'Soft').default('Soft'),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
       const { id } = req.params;
-      const result = await this.ocppServer.resetChargePoint(id, value.type);
+      const { type = 'Soft' } = req.body;
+
+      const result = await this.ocppServer.sendMessage(id, 'Reset', { type });
       this.sendSuccessResponse(res, result);
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error('Error resetting charge point:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to reset charge point');
+      this.sendErrorResponse(res, 500, 'Failed to reset charge point');
     }
   }
 
   private async unlockConnector(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      connectorId: Joi.number().integer().min(1).required(),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
       const { id } = req.params;
-      const result = await this.ocppServer.unlockConnector(id, value.connectorId);
+      const { connectorId } = req.body;
+
+      const result = await this.ocppServer.sendMessage(id, 'UnlockConnector', { connectorId });
       this.sendSuccessResponse(res, result);
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error('Error unlocking connector:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to unlock connector');
+      this.sendErrorResponse(res, 500, 'Failed to unlock connector');
     }
   }
 
-  // ==================== TRANSACTION ENDPOINTS ====================
-
+  // Transaction endpoints
   private async getTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { chargePointId, startDate, endDate, limit = '100', offset = '0' } = req.query;
-      
-      const transactions = await this.db.getTransactions({
-        chargePointId: chargePointId as string,
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
-      });
-
-      this.sendSuccessResponse(res, transactions);
+      // Implementation for getting transactions with pagination and filtering
+      this.sendSuccessResponse(res, { message: 'Get transactions endpoint' });
     } catch (error) {
       this.logger.error('Error fetching transactions:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch transactions');
@@ -594,59 +490,48 @@ export class APIGateway {
     }
   }
 
-  // ==================== CONFIGURATION ENDPOINTS ====================
-
+  // Configuration endpoints
   private async getConfiguration(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
       const { key } = req.query;
       
-      const result = await this.ocppServer.getConfiguration(
-        id,
-        key ? [key as string] : undefined
-      );
+      const result = await this.ocppServer.sendMessage(id, 'GetConfiguration', {
+        key: key ? [key] : undefined,
+      });
 
       this.sendSuccessResponse(res, result);
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error('Error fetching configuration:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to fetch configuration');
+      this.sendErrorResponse(res, 500, 'Failed to fetch configuration');
     }
   }
 
   private async changeConfiguration(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      key: Joi.string().required(),
-      value: Joi.string().required(),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
       const { id } = req.params;
-      const result = await this.ocppServer.changeConfiguration(id, value.key, value.value);
+      const { key, value } = req.body;
 
-      await this.db.setChargePointConfiguration(id, value.key, value.value);
+      const result = await this.ocppServer.sendMessage(id, 'ChangeConfiguration', {
+        key,
+        value,
+      });
+
+      // Also store in database
+      await this.db.setChargePointConfiguration(id, key, value);
 
       this.sendSuccessResponse(res, result);
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error('Error changing configuration:', error);
-      this.sendErrorResponse(res, 500, error.message || 'Failed to change configuration');
+      this.sendErrorResponse(res, 500, 'Failed to change configuration');
     }
   }
 
-  // ==================== ALARM ENDPOINTS ====================
-
+  // Alarm endpoints
   private async getAlarms(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { chargePointId, severity, resolved } = req.query;
-      const alarms = await this.db.getAlarms({
-        chargePointId: chargePointId as string,
-        severity: severity as any,
-        resolved: resolved === 'true',
-      });
+      const alarms = await this.db.getActiveAlarms(chargePointId as string);
       
       this.sendSuccessResponse(res, alarms);
     } catch (error) {
@@ -668,8 +553,7 @@ export class APIGateway {
     }
   }
 
-  // ==================== ANALYTICS ENDPOINTS ====================
-
+  // Analytics endpoints
   private async getStatistics(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { chargePointId, startDate, endDate } = req.query;
@@ -689,38 +573,21 @@ export class APIGateway {
 
   private async getEnergyConsumption(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { chargePointId, startDate, endDate, period = 'day' } = req.query;
+      const { chargePointId, period = 'day' } = req.query;
       
-      const consumption = await this.db.getEnergyConsumption({
-        chargePointId: chargePointId as string,
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-        period: period as string,
-      });
-
-      this.sendSuccessResponse(res, consumption);
+      // Implementation for energy consumption analytics
+      this.sendSuccessResponse(res, { message: 'Energy consumption analytics endpoint' });
     } catch (error) {
       this.logger.error('Error fetching energy consumption:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch energy consumption');
     }
   }
 
-  // ==================== USER MANAGEMENT ENDPOINTS ====================
-
+  // User management endpoints
   private async getUsers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const users = await this.db.getAllUsers();
-      
-      const sanitizedUsers = users.map(u => ({
-        id: u.id,
-        username: u.username,
-        email: u.email,
-        role: u.role,
-        isActive: u.isActive,
-        createdAt: u.createdAt,
-      }));
-
-      this.sendSuccessResponse(res, sanitizedUsers);
+      // Implementation for getting users
+      this.sendSuccessResponse(res, { message: 'Get users endpoint' });
     } catch (error) {
       this.logger.error('Error fetching users:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch users');
@@ -728,104 +595,36 @@ export class APIGateway {
   }
 
   private async createUser(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      username: Joi.string().min(3).max(30).required(),
-      email: Joi.string().email().required(),
-      password: Joi.string().min(6).required(),
-      role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY').required(),
-      isActive: Joi.boolean().default(true),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
-      const hashedPassword = await bcrypt.hash(value.password, 12);
-      
-      const user = await this.db.createUser({
-        username: value.username,
-        email: value.email,
-        password: hashedPassword,
-        role: value.role,
-        // isActive: value.isActive,
-      });
-
-      this.sendSuccessResponse(res, {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-      });
-    } catch (error: any) {
+      // Implementation for creating users
+      this.sendSuccessResponse(res, { message: 'Create user endpoint' });
+    } catch (error) {
       this.logger.error('Error creating user:', error);
-      if (error.code === 'P2002') {
-        return this.sendErrorResponse(res, 409, 'Username or email already exists');
-      }
       this.sendErrorResponse(res, 500, 'Failed to create user');
     }
   }
 
   private async updateUser(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-      username: Joi.string().min(3).max(30).optional(),
-      email: Joi.string().email().optional(),
-      password: Joi.string().min(6).optional(),
-      role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY').optional(),
-      isActive: Joi.boolean().optional(),
-    });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      return this.sendErrorResponse(res, 400, error.details[0].message);
-    }
-
     try {
-      const { id } = req.params;
-      
-      const updateData: any = { ...value };
-      if (value.password) {
-        updateData.password = await bcrypt.hash(value.password, 12);
-      }
-
-      const user = await this.db.updateUser(id, updateData);
-
-      this.sendSuccessResponse(res, {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-      });
-    } catch (error: any) {
+      // Implementation for updating users
+      this.sendSuccessResponse(res, { message: 'Update user endpoint' });
+    } catch (error) {
       this.logger.error('Error updating user:', error);
-      if (error.code === 'P2002') {
-        return this.sendErrorResponse(res, 409, 'Username or email already exists');
-      }
       this.sendErrorResponse(res, 500, 'Failed to update user');
     }
   }
 
   private async deleteUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { id } = req.params;
-      
-      if (req.user?.id === id) {
-        return this.sendErrorResponse(res, 400, 'Cannot delete your own account');
-      }
-
-      await this.db.deleteUser(id);
-      this.sendSuccessResponse(res, { message: 'User deleted successfully' });
+      // Implementation for deleting users
+      this.sendSuccessResponse(res, { message: 'Delete user endpoint' });
     } catch (error) {
       this.logger.error('Error deleting user:', error);
       this.sendErrorResponse(res, 500, 'Failed to delete user');
     }
   }
 
-  // ==================== HEALTH CHECK ENDPOINT ====================
-
+  // Health check endpoint
   private async healthCheck(req: Request, res: Response): Promise<void> {
     try {
       const dbHealth = await this.db.healthCheck();
@@ -853,8 +652,7 @@ export class APIGateway {
     }
   }
 
-  // ==================== RESPONSE HELPERS ====================
-
+  // Response helpers
   private sendSuccessResponse<T>(res: Response, data: T): void {
     const response: APIResponse<T> = {
       success: true,
@@ -864,6 +662,8 @@ export class APIGateway {
     res.status(200).json(response);
   }
 
+
+  //Error Handlers
   private sendErrorResponse(res: Response, statusCode: number, error: string): void {
     const response: APIResponse = {
       success: false,
@@ -876,4 +676,111 @@ export class APIGateway {
   public getRouter(): Router {
     return this.router;
   }
+
+
+
+ /**
+   * Get all connectors for a specific charge point
+   */
+  private async getChargePointConnectors(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    // Await the async discovery function
+    const result = await this.ocppServer.getChargeStationGunDetails(id);
+
+    if (!result) {
+      return this.sendErrorResponse(
+        res,
+        404,
+        "Charge point not connected or no data available"
+      );
+    }
+
+    const { connectors, metadata, success } = result;
+
+    // Optional: build summary stats
+    const summary = {
+  total: connectors.length,
+  available: connectors.filter((c) => c.status?.includes("Available")).length,
+  charging: connectors.filter((c) => c.status?.includes("Charging")).length,
+  faulted: connectors.filter((c) => c.status?.includes("Faulted")).length,
+  unavailable: connectors.filter((c) => c.status?.includes("Unavailable")).length,
+};
+
+
+    return this.sendSuccessResponse(res, {
+      chargePointId: id,
+      success,
+      connectorCount: metadata.totalConnectors,
+      metadata,
+      summary,
+      connectors,
+      result
+    });
+  } catch (error) {
+    this.logger.error("Error fetching charge point connectors:", error);
+    return this.sendErrorResponse(
+      res,
+      500,
+      "Failed to fetch charge point connectors"
+    );
+  }
+}
+
+  /**
+   * Get specific connector data
+   */
+  private async getChargePointConnector(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id, connectorId } = req.params;
+      const connector = this.ocppServer.triggerStatusForAll()
+      
+      if (!connector) {
+        return this.sendErrorResponse(res, 404, 'Connector not found or charge point not connected');
+      }
+
+      this.sendSuccessResponse(res, connector);
+    } catch (error) {
+      this.logger.error('Error fetching connector:', error);
+      this.sendErrorResponse(res, 500, 'Failed to fetch connector');
+    }
+  }
+
+  // OPTIONALLY ENHANCE existing method (but keep it working as before)
+  // private async getChargePoint(req: AuthenticatedRequest, res: Response): Promise<void> {
+  //   try {
+  //     const { id } = req.params;
+  //     const chargePoint = await this.db.getChargePoint(id);
+      
+  //     if (!chargePoint) {
+  //       return this.sendErrorResponse(res, 404, 'Charge point not found');
+  //     }
+
+  //     const isConnected = this.ocppServer.getConnectedChargePoints().includes(id);
+      
+  //     // Keep backward compatibility - still return realTimeData as single object
+  //     const realTimeData = this.ocppServer.getChargePointData(id);
+      
+  //     // Add new connector information (optional)
+  //     const connectors = this.ocppServer.getChargePointConnectors(id);
+  //     const connectorCount = this.ocppServer.getConnectorCount(id);
+
+  //     this.sendSuccessResponse(res, {
+  //       chargePoint,
+  //       isConnected,
+  //       realTimeData, // Keep this for backward compatibility
+  //       // Add new fields (optional - won't break existing clients)
+  //       connectorCount,
+  //       connectors: connectors || []
+  //     });
+  //   } catch (error) {
+  //     this.logger.error('Error fetching charge point:', error);
+  //     this.sendErrorResponse(res, 500, 'Failed to fetch charge point');
+  //   }
+  // }
+
 }
