@@ -289,15 +289,14 @@ console.log('All Connections:', getAllConnections.currentData);
       }));
 
       this.logger.debug('Sampled values:', sampledValues);
-      console.log('Sampled values:', sampledValues)
 
-      await this.db.saveMeterValues({
-        transactionId: payload.transactionId,
-        connectorId: payload.connectorId,
-        chargePointId,
-        timestamp: new Date(meterValue.timestamp),
-        sampledValues,
-      });
+      // await this.db.saveMeterValues({
+      //   transactionId: payload.transactionId,
+      //   connectorId: payload.connectorId,
+      //   chargePointId,
+      //   timestamp: new Date(meterValue.timestamp),
+      //   sampledValues,
+      // });
     }
 
     return {};
