@@ -162,7 +162,15 @@ export interface HeartbeatResponse {
 
 export interface StatusNotificationResponse {}
 
-export interface MeterValuesResponse {}
+export interface MeterValuesResponse {
+   value: string,
+   context: string,
+   format: string,
+   measurand: string,
+   phase: string,
+   location:string,
+   unit: string,
+}
 
 export interface StartTransactionResponse {
   transactionId: number;

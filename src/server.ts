@@ -31,9 +31,11 @@ class Application {
     
     this.db = new DatabaseService();
     this.redis = new RedisService();
-    this.ocppServer = new OCPPServer(this.wss, this.db, this.redis);
-    this.apiGateway = new APIGateway(this.ocppServer, this.db);
+    this.apiGateway = new APIGateway(null as any, this.db);
+    this.ocppServer = new OCPPServer(this.wss, this.db, this.redis, this.apiGateway);
+    this.apiGateway.setOcppServer(this.ocppServer);
   }
+
 
   private setupMiddleware(): void {
     this.app.use(helmet());

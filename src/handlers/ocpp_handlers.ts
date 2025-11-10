@@ -21,6 +21,7 @@ import {
   AuthorizeRequest,
   AuthorizeResponse,
 } from "../types/ocpp_types";
+import { APIGateway } from "../services/api_gateway";
 
 interface PendingCall {
   resolve: (value: any) => void;
@@ -35,7 +36,10 @@ export class OCPPMessageHandler {
   constructor(
     private readonly db: DatabaseService,
     private readonly redis: RedisService,
+    private readonly apiGateway: APIGateway
   ) {}
+
+
 
   // ==================== MESSAGE ROUTING ====================
 
@@ -126,7 +130,6 @@ export class OCPPMessageHandler {
     payload: any,
     connection: ChargePointConnection
   ): Promise<any> {
-    this.logger.debug(`Handling ${action} from ${chargePointId}`, payload);
 
     try {
       let response: any;
@@ -270,13 +273,11 @@ console.log('All Connections:', getAllConnections.currentData);
     return {};
   }
 
-  private async handleMeterValues(
+  private handleMeterValues(
     chargePointId: string,
     payload: MeterValuesRequest,
     connection: ChargePointConnection
-  ): Promise<MeterValuesResponse> {
-    this.logger.debug(`Meter values from ${chargePointId}:`, payload);
-    console.log('Meter values payload:', ...payload.meterValue);
+  ) {
     for (const meterValue of payload.meterValue) {
       const sampledValues = meterValue.sampledValue.map((sv) => ({
         value: sv.value,
@@ -287,9 +288,11 @@ console.log('All Connections:', getAllConnections.currentData);
         location: sv.location,
         unit: sv.unit,
       }));
-
-      this.logger.debug('Sampled values:', sampledValues);
-
+      this.apiGateway.sendMeterValueToClients({
+      chargePointId,
+      timestamp: meterValue.timestamp,
+      sampledValues,
+      })
       // await this.db.saveMeterValues({
       //   transactionId: payload.transactionId,
       //   connectorId: payload.connectorId,
@@ -298,8 +301,6 @@ console.log('All Connections:', getAllConnections.currentData);
       //   sampledValues,
       // });
     }
-
-    return {};
   }
 
   private async handleStartTransaction(
@@ -308,23 +309,23 @@ console.log('All Connections:', getAllConnections.currentData);
     connection: ChargePointConnection
   ): Promise<StartTransactionResponse> {
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
-    console.log({ StartTransaction: payload });
+    console.log("The start config",{ StartTransaction: payload });
 
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
-    if (idTagValidation.status !== "ACCEPTED") {
-      return {
-        transactionId: -1,
-        idTagInfo: {
-          status: idTagValidation.status as any,
-          expiryDate: idTagValidation.expiryDate?.toISOString(),
-        },
-      };
-    }
+    // if (idTagValidation.status !== "ACCEPTED") {
+    //   return {
+    //     transactionId: -1,
+    //     idTagInfo: {
+    //       status: idTagValidation.status as any,
+    //       expiryDate: idTagValidation.expiryDate?.toISOString(),
+    //     },
+    //   };
+    // }
 
     const transactionId = Math.floor(Math.random() * 1000000) + 1;
 
-    await this.db.createTransaction({
+    const transaction = await this.db.createTransaction({
       transactionId,
       chargePointId,
       connectorId: payload.connectorId,
@@ -334,10 +335,12 @@ console.log('All Connections:', getAllConnections.currentData);
       reservationId: payload.reservationId,
     });
 
-    await this.db.updateConnectorStatus(
+    await this.db.createOrUpdateConnector(
       chargePointId,
       payload.connectorId,
-      "CHARGING"
+      payload,
+      transaction.id
+
     );
 
     if (connection.currentData) {
@@ -362,6 +365,7 @@ console.log('All Connections:', getAllConnections.currentData);
     this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
 
     const transaction = await this.db.getTransaction(payload.transactionId);
+    console.log({ StopTransaction: payload, transaction });
 
     if (!transaction) {
       return {
