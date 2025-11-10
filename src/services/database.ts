@@ -11,7 +11,7 @@ export class DatabaseService {
 
   constructor() {
     this.prisma = new PrismaClient({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
+      // log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
     });
   }
 
@@ -110,7 +110,8 @@ export class DatabaseService {
   public async createOrUpdateConnector(
     chargePointId: string,
     connectorId: number,
-    data: Partial<Connector>
+    data: Partial<Connector>,
+    transactionId?: number
   ): Promise<Connector> {
     return this.prisma.connector.upsert({
       where: {
@@ -120,7 +121,8 @@ export class DatabaseService {
         },
       },
       update: {
-        ...data,
+        // ...data,
+        currentTransactionId: transactionId ?? undefined,
         lastUpdated: new Date(),
         updatedAt: new Date(),
       },
@@ -129,7 +131,9 @@ export class DatabaseService {
         connectorId,
         type: (data.type as any) || 'TYPE2',
         status: (data.status as any) || ConnectorStatus.AVAILABLE,
-        ...data,
+        currentTransactionId: transactionId ?? undefined,
+        lastUpdated: new Date(),
+        createdAt: new Date(),
       },
     });
   }
@@ -150,7 +154,7 @@ export class DatabaseService {
         },
       },
       update: {
-        status: ConnectorStatus[normalisedStatus] || ConnectorStatus.AVAILABLE,
+        status: ConnectorStatus[normalisedStatus] ? ConnectorStatus[normalisedStatus] : ConnectorStatus.UNAVAILABLE,
         errorCode,
         vendorErrorCode,
         lastUpdated: new Date(),
@@ -224,6 +228,33 @@ export class DatabaseService {
       },
     });
   }
+
+ public async getTransactions(options?: {
+  skip?: number;
+  take?: number;
+  where?: any;
+  orderBy?: any;
+}): Promise<Transaction[]> {
+  return this.prisma.transaction.findMany({
+    skip: options?.skip,
+    take: options?.take,
+    where: options?.where,
+    orderBy: options?.orderBy,
+    include: {
+      chargePoint: true,
+      connector: true,
+      meterValues: {
+        include: {
+          sampledValues: true,
+        },
+      },
+    },
+  });
+}
+
+public async getTransactionsCount(where?: any): Promise<number> {
+  return this.prisma.transaction.count({ where });
+}
 
   public async getActiveTransactions(chargePointId?: string): Promise<Transaction[]> {
     return this.prisma.transaction.findMany({

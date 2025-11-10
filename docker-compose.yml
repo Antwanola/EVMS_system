@@ -44,6 +44,9 @@ services:
     restart: unless-stopped
     networks:
       - evms_system_app-network
+# 🔹 Expose port 3000 to host for local testing
+    ports:
+      - "3000:3000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ocpp.rule=Host(`evms.folti.io`)"
@@ -84,6 +87,8 @@ services:
       retries: 5
     networks:
       - evms_system_app-network
+    ports:
+      - "6379:6379"
 
 volumes:
   postgres_data:

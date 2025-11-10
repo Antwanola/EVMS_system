@@ -14,6 +14,7 @@ import {
   ChargingStationData 
 } from '../types/ocpp_types';
 import { buffer } from 'stream/consumers';
+import { APIGateway } from './api_gateway';
 
 export class OCPPServer {
   private logger = Logger.getInstance();
@@ -25,9 +26,10 @@ export class OCPPServer {
     // private server: HttpServer,
     private wss: WebSocketServer,
     private db: DatabaseService,
-    private redis: RedisService
+    private redis: RedisService,
+    private apiGateway: APIGateway
   ) {
-    this.messageHandler = new OCPPMessageHandler(this.db, this.redis);
+    this.messageHandler = new OCPPMessageHandler(this.db, this.redis, apiGateway);
     this.chargePointManager = new ChargePointManager(this.db, this.redis);
   }
 
@@ -140,8 +142,7 @@ export class OCPPServer {
       connection.isAlive = true;
 
       const message: OCPPMessage = JSON.parse(data.toString());
-      console.log({message})
-      this.logger.debug(`Received message from ${chargePointId}:`, message);
+      console.log(`Received message from raw ${chargePointId}:`, message);
 
       const response = await this.messageHandler.handleMessage(chargePointId, message, connection);
       
