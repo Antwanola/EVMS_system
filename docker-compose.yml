@@ -54,6 +54,16 @@ services:
       - "traefik.http.routers.ocpp.tls.certresolver=myresolver"
       - "traefik.http.services.ocpp.loadbalancer.server.port=3000"
 
+      # ✅ CORS Middleware
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE"
+      - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=https://evms-frontend.onrender.com"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowheaders=Authorization,Content-Type"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials=true"
+      - "traefik.http.middlewares.cors.headers.addvaryheader=true"
+
+      # Apply the middleware to your router
+      - "traefik.http.routers.ocpp.middlewares=cors@docker"
+
   postgres:
     image: postgres:16
     container_name: evms-postgres
