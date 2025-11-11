@@ -7,8 +7,8 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
       - "--certificatesresolvers.myresolver.acme.email=oolayiwola@folti.io"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
@@ -25,44 +25,35 @@ services:
       - evms_system_app-network
     restart: unless-stopped
 
-ocpp-server:
-  build:
-    context: .
-    dockerfile: Dockerfile
-  container_name: ocpp-server
-  environment:
-    - PORT=3000
-    - JWT_SECRET=secretkey123
-    - NODE_ENV=production
-    - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ocpp
-    - REDIS_URL=redis://redis:6379
-  depends_on:
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-  restart: unless-stopped
-  networks:
-    - evms_system_app-network
-  ports:
-    - "3000:3000"
-  labels:
-    - "traefik.enable=true"
-    # 🔹 Define router for your domain
-    - "traefik.http.routers.ocpp.rule=Host(`evms.folti.io`)"
-    - "traefik.http.routers.ocpp.entrypoints=websecure"
-    - "traefik.http.routers.ocpp.tls.certresolver=myresolver"
-    - "traefik.http.services.ocpp.loadbalancer.server.port=3000"
-    # ✅ CORS Middleware
-    - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE"
-    - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=https://evms-frontend.onrender.com"
-    - "traefik.http.middlewares.cors.headers.accesscontrolallowheaders=Authorization,Content-Type"
-    - "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials=true"
-    - "traefik.http.middlewares.cors.headers.addvaryheader=true"
-    # Apply middleware
-    - "traefik.http.routers.ocpp.middlewares=cors@docker"
+  ocpp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ocpp-server
+    environment:
+      - PORT=3000
+      - JWT_SECRET=secretkey123
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ocpp
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - evms_system_app-network
+# 🔹 Expose port 3000 to host for local testing
+    ports:
+      - "3000:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ocpp.rule=Host(`evms.folti.io`)"
+      - "traefik.http.routers.ocpp.entrypoints=websecure"
+      - "traefik.http.routers.ocpp.tls.certresolver=myresolver"
+      - "traefik.http.services.ocpp.loadbalancer.server.port=3000"
 
-    
   postgres:
     image: postgres:16
     container_name: evms-postgres
