@@ -49,7 +49,7 @@ services:
       - "3000:3000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ocpp.rule=Host(`evms.folti.io`)"
+      - "traefik.http.routers.ocpp.rule=Host(\"evms.folti.io\")"
       - "traefik.http.routers.ocpp.entrypoints=websecure"
       - "traefik.http.routers.ocpp.tls.certresolver=myresolver"
       - "traefik.http.services.ocpp.loadbalancer.server.port=3000"
