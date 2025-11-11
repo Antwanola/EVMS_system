@@ -41,30 +41,23 @@ private setupMiddleware(): void {
   this.app.use(helmet());
 
   this.app.use(cors({
-    origin: (origin, callback) => {
-      const allowedOrigins = [
-        "https://evms-frontend.onrender.com",
-        "http://localhost:3000",
-        "http://localhost:3002"
-      ];
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: [
+      "https://evms-frontend.onrender.com", // Render frontend
+      "http://localhost:3000",              // Local dev
+      "http://localhost:3002"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-    optionsSuccessStatus: 200
   }));
 
-  // explicitly handle preflight requests
-  this.app.options('*', cors());
+  // Explicitly handle preflight requests
+  this.app.options("*", cors());
 
-  this.app.use(express.json({ limit: '10mb' }));
+  this.app.use(express.json({ limit: "10mb" }));
   this.app.use(express.urlencoded({ extended: true }));
 }
+
 
 
   private setupRoutes(): void {
