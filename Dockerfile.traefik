@@ -1,4 +1,1 @@
 FROM traefik:v3.2
-
-# Install updated Docker client library
-RUN apk add --no-cache docker-cli
