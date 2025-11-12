@@ -1,8 +1,6 @@
 services:
   traefik:
-    build:
-      context: .
-      dockerfile: Dockerfile.traefik
+    image: traefik:v3.2
     container_name: traefik
     command:
       - "--providers.docker=true"
