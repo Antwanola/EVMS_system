@@ -17,12 +17,12 @@ sleep 15
 
 # Check if containers are running
 echo -e "\033[36m🔍 Checking container status...\033[0m"
-containers=$(docker compose ps --format "table {{.Service}}\t{{.State}}")
-echo "$containers"
+docker compose ps --format "table {{.Service}}\t{{.State}}"
 
 # Check if Traefik is running properly
 echo -e "\033[36m🔍 Checking Traefik status...\033[0m"
 traefikStatus=$(docker compose ps traefik --format "{{.State}}")
+
 if [ "$traefikStatus" != "running" ]; then
     echo -e "\033[31m❌ Traefik is not running. Checking logs...\033[0m"
     docker compose logs traefik | tail -20
@@ -31,9 +31,8 @@ fi
 
 # Wait for database to be ready and run migrations
 echo -e "\033[36m📦 Waiting for database and running Prisma migrations...\033[0m"
-
-# First, wait for database to be ready
 echo -e "\033[37m   Checking database connectivity...\033[0m"
+
 dbReady=false
 dbAttempts=0
 maxDbAttempts=30
@@ -41,13 +40,13 @@ maxDbAttempts=30
 while [ $dbAttempts -lt $maxDbAttempts ]; do
     ((dbAttempts++))
     echo -e "\033[37m   Database check attempt $dbAttempts/$maxDbAttempts...\033[0m"
-    
+
     if docker compose exec -T postgres pg_isready -U postgres -d ocpp > /dev/null 2>&1; then
         echo -e "\033[32m✅ Database is ready!\033[0m"
         dbReady=true
         break
     fi
-    
+
     sleep 2
 done
 
@@ -57,7 +56,7 @@ if [ "$dbReady" = false ]; then
     exit 1
 fi
 
-# Wait a bit more for the ocpp-server to be fully up
+# Wait a bit more for the OCPP server to be fully up
 echo -e "\033[33m⏳ Waiting for OCPP server to initialize...\033[0m"
 sleep 5
 
@@ -67,24 +66,28 @@ attempt=1
 
 while [ $attempt -le $maxAttempts ]; do
     echo -e "\033[37m   Migration attempt $attempt/$maxAttempts...\033[0m"
-    
-    if docker compose exec -T ocpp-server npx prisma migrate deploy 2>&1 | tee /tmp/migration.log | grep -q "applied"; then
+
+    docker compose exec -T ocpp-server npx prisma migrate deploy 2>&1 | tee /tmp/migration.log
+
+    if grep -q "No pending migrations to apply" /tmp/migration.log; then
+        echo -e "\033[32m✅ No pending migrations. Database is up to date!\033[0m"
+        break
+    elif grep -q "applied" /tmp/migration.log; then
         echo -e "\033[32m✅ Prisma migrations completed successfully!\033[0m"
         break
+    elif grep -q "already applied" /tmp/migration.log; then
+        echo -e "\033[32m✅ All migrations already applied!\033[0m"
+        break
+    elif [ $attempt -eq $maxAttempts ]; then
+        echo -e "\033[31m❌ Migration attempt $attempt failed\033[0m"
+        echo -e "\033[31mError output:\033[0m"
+        cat /tmp/migration.log
     else
-        if grep -q "already applied" /tmp/migration.log; then
-            echo -e "\033[32m✅ All migrations already applied!\033[0m"
-            break
-        elif [ $attempt -eq $maxAttempts ]; then
-            echo -e "\033[31m❌ Migration attempt $attempt failed\033[0m"
-            echo -e "\033[31mError output:\033[0m"
-            cat /tmp/migration.log
-        else
-            echo -e "\033[33m⚠️  Migration attempt $attempt failed, retrying...\033[0m"
-            sleep 5
-        fi
-        ((attempt++))
+        echo -e "\033[33m⚠️  Migration attempt $attempt failed, retrying...\033[0m"
+        sleep 5
     fi
+
+    ((attempt++))
 done
 
 if [ $attempt -gt $maxAttempts ]; then
@@ -101,7 +104,7 @@ rm -f /tmp/migration.log
 echo ""
 echo -e "\033[32m✅ OCPP Gateway is up and running!\033[0m"
 
-# Check if Traefik is working
+# Access info
 if [ "$traefikStatus" = "running" ]; then
     echo -e "\033[36m🌐 Access your application at: https://evms.folti.io\033[0m"
     echo -e "\033[36m📊 Traefik Dashboard: http://localhost:8080\033[0m"
@@ -110,6 +113,7 @@ else
     echo -e "\033[33m⚠️  Traefik is not running - HTTPS not available\033[0m"
 fi
 
+# Final container status
 echo ""
 echo -e "\033[36m📊 Final Container Status:\033[0m"
 docker compose ps
