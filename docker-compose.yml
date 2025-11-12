@@ -1,6 +1,8 @@
 services:
   traefik:
-    image: traefik:v3.2
+    build:
+      context: .
+      dockerfile: Dockerfile.traefik
     container_name: traefik
     command:
       - "--providers.docker=true"
@@ -16,9 +18,6 @@ services:
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
       - "--api.dashboard=true"
       - "--api.insecure=true"
-      - "--log.level=DEBUG"
-    environment:
-      - DOCKER_API_VERSION=1.44
     ports:
       - "80:80"
       - "443:443"

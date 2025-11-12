@@ -20,6 +20,15 @@ echo -e "\033[36m🔍 Checking container status...\033[0m"
 containers=$(docker compose ps --format "table {{.Service}}\t{{.State}}")
 echo "$containers"
 
+# Check if Traefik is running properly
+echo -e "\033[36m🔍 Checking Traefik status...\033[0m"
+traefikStatus=$(docker compose ps traefik --format "{{.State}}")
+if [ "$traefikStatus" != "running" ]; then
+    echo -e "\033[31m❌ Traefik is not running. Checking logs...\033[0m"
+    docker compose logs traefik | tail -20
+    echo -e "\033[33m⚠️  Continuing without Traefik...\033[0m"
+fi
+
 # Wait for database to be ready and run migrations
 echo -e "\033[36m📦 Waiting for database and running Prisma migrations...\033[0m"
 
@@ -48,6 +57,10 @@ if [ "$dbReady" = false ]; then
     exit 1
 fi
 
+# Wait a bit more for the ocpp-server to be fully up
+echo -e "\033[33m⏳ Waiting for OCPP server to initialize...\033[0m"
+sleep 5
+
 # Run Prisma migrations with retries
 maxAttempts=5
 attempt=1
@@ -55,14 +68,21 @@ attempt=1
 while [ $attempt -le $maxAttempts ]; do
     echo -e "\033[37m   Migration attempt $attempt/$maxAttempts...\033[0m"
     
-    if docker compose exec -T ocpp-server npx prisma migrate deploy > /dev/null 2>&1; then
+    if docker compose exec -T ocpp-server npx prisma migrate deploy 2>&1 | tee /tmp/migration.log | grep -q "applied"; then
         echo -e "\033[32m✅ Prisma migrations completed successfully!\033[0m"
         break
     else
-        echo -e "\033[33m⚠️  Migration attempt $attempt failed, retrying...\033[0m"
-        echo -e "\033[31mError output:\033[0m"
-        docker compose exec -T ocpp-server npx prisma migrate deploy
-        sleep 5
+        if grep -q "already applied" /tmp/migration.log; then
+            echo -e "\033[32m✅ All migrations already applied!\033[0m"
+            break
+        elif [ $attempt -eq $maxAttempts ]; then
+            echo -e "\033[31m❌ Migration attempt $attempt failed\033[0m"
+            echo -e "\033[31mError output:\033[0m"
+            cat /tmp/migration.log
+        else
+            echo -e "\033[33m⚠️  Migration attempt $attempt failed, retrying...\033[0m"
+            sleep 5
+        fi
         ((attempt++))
     fi
 done
@@ -70,14 +90,26 @@ done
 if [ $attempt -gt $maxAttempts ]; then
     echo -e "\033[31m❌ Prisma migrations failed after $maxAttempts attempts\033[0m"
     echo -e "\033[33m📋 App container logs:\033[0m"
-    docker compose logs ocpp-server
+    docker compose logs ocpp-server | tail -50
     exit 1
 fi
+
+# Clean up temp file
+rm -f /tmp/migration.log
 
 # Final status check
 echo ""
 echo -e "\033[32m✅ OCPP Gateway is up and running!\033[0m"
-echo -e "\033[36m🌐 Access your application at: http://localhost:3000\033[0m"
+
+# Check if Traefik is working
+if [ "$traefikStatus" = "running" ]; then
+    echo -e "\033[36m🌐 Access your application at: https://evms.folti.io\033[0m"
+    echo -e "\033[36m📊 Traefik Dashboard: http://localhost:8080\033[0m"
+else
+    echo -e "\033[36m🌐 Direct access (no HTTPS): http://localhost:3000\033[0m"
+    echo -e "\033[33m⚠️  Traefik is not running - HTTPS not available\033[0m"
+fi
+
 echo ""
 echo -e "\033[36m📊 Final Container Status:\033[0m"
 docker compose ps
@@ -85,5 +117,8 @@ echo ""
 echo -e "\033[37m📋 Useful Commands:\033[0m"
 echo -e "\033[37m   🔍 View all logs: docker compose logs -f\033[0m"
 echo -e "\033[37m   🔍 View app logs: docker compose logs -f ocpp-server\033[0m"
+echo -e "\033[37m   🔍 View Traefik logs: docker compose logs -f traefik\033[0m"
 echo -e "\033[37m   🛑 Stop services: docker compose down\033[0m"
 echo -e "\033[37m   🔄 Restart app: docker compose restart ocpp-server\033[0m"
+echo -e "\033[37m   🔄 Restart Traefik: docker compose restart traefik\033[0m"
+echo ""
