@@ -359,6 +359,9 @@ public async getTransactionsCount(where?: any): Promise<number> {
     username: string;
     email: string;
     password: string;
+    isActive?: boolean;
+    idTag?: string;
+    phone?: string;
     role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
   }): Promise<User> {
     return this.prisma.user.create({
@@ -375,10 +378,29 @@ public async getTransactionsCount(where?: any): Promise<number> {
       },
     });
   }
+  public async updateUser(email: string, data: Partial<User>): Promise<UserWithRelations> {
+    return this.prisma.user.update({
+      where: { email },
+      data,
+      include: {
+        permissions: true,
+        chargePointAccess: true,
+      },
+    });
+  }
 
   public async getUserByApiKey(apiKey: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { apiKey },
+      include: {
+        permissions: true,
+        chargePointAccess: true,
+      },
+    });
+  }
+
+  public async getAllUsers(): Promise<UserWithRelations[]> {
+    return this.prisma.user.findMany({
       include: {
         permissions: true,
         chargePointAccess: true,

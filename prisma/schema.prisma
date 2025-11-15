@@ -164,8 +164,10 @@ model User {
   role              UserRole            @default(VIEWER)
   apiKey            String?             @unique
   isActive          Boolean             @default(true)
+  phone             String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  idTag             String?
   chargePointAccess ChargePointAccess[]
   permissions       Permission[]
 
