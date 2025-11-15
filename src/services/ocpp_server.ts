@@ -13,17 +13,18 @@ import {
   MessageType,
   ChargingStationData 
 } from '../types/ocpp_types';
-import { buffer } from 'stream/consumers';
 import { APIGateway } from './api_gateway';
+
 
 export class OCPPServer {
   private logger = Logger.getInstance();
   private connections = new Map<string, ChargePointConnection>();
   private messageHandler: OCPPMessageHandler;
   private chargePointManager: ChargePointManager;
+  private chargePointID: string;
 
   constructor(
-    // private server: HttpServer,
+   
     private wss: WebSocketServer,
     private db: DatabaseService,
     private redis: RedisService,
@@ -31,6 +32,7 @@ export class OCPPServer {
   ) {
     this.messageHandler = new OCPPMessageHandler(this.db, this.redis, apiGateway);
     this.chargePointManager = new ChargePointManager(this.db, this.redis);
+    this.chargePointID = '';
   }
 
   public initialize(): void {
@@ -42,11 +44,11 @@ export class OCPPServer {
   private handleConnection(ws: WebSocket, request: any): void {
     const url = new URL(request.url!, `http://${request.headers.host}`);
       const pathSegments = url.pathname.split('/').filter(Boolean); // remove empty segments
-    const chargePointId = pathSegments[pathSegments.length - 1]; // last segment is ID
-    console.log({chargePointId})
+      this.chargePointID = pathSegments[pathSegments.length - 1]; // last segment is ID
+    console.log(this.chargePointID)
     console.log({pathSegments})
 
-    if (!chargePointId) {
+    if (!this.chargePointID) {
       this.logger.warn('Connection rejected: No charge point ID provided');
       ws.close(1008, 'Charge point ID required');
       return;
@@ -54,32 +56,32 @@ export class OCPPServer {
 
   // const defaultConnectors = parseInt(process.env.DEFAULT_CONNECTORS || '2');
   const connectors = new Map<number, ChargingStationData>();
-  
+  console.log("chargeID", this.chargePointID)
     const connection: ChargePointConnection = {
-      id: chargePointId,
+      id: this.chargePointID,
       ws,
       isAlive: true,
       lastSeen: new Date(),
       bootNotificationSent: false,
       heartbeatInterval: 300000, // 5 minutes default
-      currentData: this.getDefaultChargingData(chargePointId, 1),
+      currentData: this.getAllChargePointsData().get(this.chargePointID),
       connectors,
       numberOfConnectors: connectors.size,
       meters: new Map<string, any>()
     };
 
-    this.connections.set(chargePointId, connection);
-    this.logger.info(`Charge point ${chargePointId} connected with ${connection.numberOfConnectors} connectors`);
+    this.connections.set(this.chargePointID, connection);
+    this.logger.info(`Charge point ${this.chargePointID} connected with ${connection.numberOfConnectors} connectors`);
 
 
     // Setup WebSocket event handlers
-    ws.on('message', (data) => this.handleMessage(chargePointId, data));
-    ws.on('close', () => this.handleDisconnection(chargePointId));
-    ws.on('error', (error) => this.handleError(chargePointId, error));
-    ws.on('pong', () => this.handlePong(chargePointId));
+    ws.on('message', (data) => this.handleMessage(this.chargePointID, data));
+    ws.on('close', () => this.handleDisconnection(this.chargePointID));
+    ws.on('error', (error) => this.handleError(this.chargePointID, error));
+    ws.on('pong', () => this.handlePong(this.chargePointID));
 
     // Register charge point
-    this.chargePointManager.registerChargePoint(chargePointId, connection);
+    this.chargePointManager.registerChargePoint(this.chargePointID, connection);
   }
 
 
@@ -141,7 +143,7 @@ export class OCPPServer {
       connection.lastSeen = new Date();
       connection.isAlive = true;
 
-      const message: OCPPMessage = JSON.parse(data.toString());
+      const message = JSON.parse(data.toString());
       console.log(`Received message from raw ${chargePointId}:`, message);
 
       const response = await this.messageHandler.handleMessage(chargePointId, message, connection);
@@ -162,19 +164,21 @@ export class OCPPServer {
 
   private async updateRealTimeData(
     chargePointId: string, 
-    message: OCPPMessage, 
+    message: any, 
     connection: ChargePointConnection
   ): Promise<void> {
     try {
+      const [messageTypeId, uniqueId, action, payload] = message;
       // Update connection's current data based on message type
-      switch (message.action) {
+      console.log("realtime update", payload.status)
+      switch (action) {
         case 'StatusNotification':
-          connection.currentData!.status = message.payload.status;
-          connection.currentData!.timestamp = new Date();
+          connection.currentData! = payload;
+          // connection.currentData!.timestamp = new Date();
           break;
         
         case 'MeterValues':
-          this.processMeterValues(connection, message.payload);
+          // this.processMeterValues(connection, payload);
           break;
       }
 
@@ -186,7 +190,7 @@ export class OCPPServer {
       );
 
       // Store in database for historical data
-      await this.db.saveChargingData(connection.currentData!);
+      // await this.db.saveChargingData(connection.currentData!);
 
     } catch (error) {
       this.logger.error(`Error updating real-time data for ${chargePointId}:`, error);

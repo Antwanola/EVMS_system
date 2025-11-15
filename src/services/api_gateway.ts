@@ -10,6 +10,9 @@ import { DatabaseService } from '../services/database';
 import { RedisService } from '../services/redis';
 import { APIResponse, APIUser } from '../types/ocpp_types';
 import { TransactionQueryParams } from '../types/TnxQueryType';
+import crypto from 'crypto';
+import { UserStrutcture } from '@/types/apiHelperypes';
+
 
 interface AuthenticatedRequest extends Request {
   user?: APIUser;
@@ -47,6 +50,12 @@ export class APIGateway {
     }
   }
 
+
+  private generateHashedCode(input: string): string {
+    return crypto.createHash('sha256').update(input).digest('hex').slice(0, 6).toUpperCase();
+  }
+
+
   private setupRoutes(): void {
     // Apply rate limiting middleware
     this.router.use(this.rateLimitMiddleware.bind(this));
@@ -55,7 +64,7 @@ export class APIGateway {
     this.router.post('/auth/login', this.login.bind(this));
     this.router.post('/auth/register', this.register.bind(this));
     this.router.post('/auth/refresh', this.refreshToken.bind(this));
-
+    
     // Charge point routes
     this.router.get('/charge-points', this.authenticateUser.bind(this), this.getChargePoints.bind(this));
     this.router.get('/charge-points/:id', this.authenticateUser.bind(this), this.getChargePoint.bind(this));
@@ -95,8 +104,8 @@ export class APIGateway {
 
     // User management routes (Admin only)
     this.router.get('/users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.getUsers.bind(this));
-    this.router.post('/users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.createUser.bind(this));
-    this.router.put('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.updateUser.bind(this));
+    this.router.post('/create-users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.createUser.bind(this));
+    this.router.post('/user/update', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.editUser.bind(this))
     this.router.delete('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.deleteUser.bind(this));
 
     // Health check
@@ -198,7 +207,7 @@ export class APIGateway {
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role, username: user.username },
         process.env.JWT_SECRET!,
-        { expiresIn: '24h' }
+        { expiresIn: '7d' }
       );
 
       this.sendSuccessResponse(res, {
@@ -260,6 +269,60 @@ export class APIGateway {
     // Implementation for token refresh
     this.sendSuccessResponse(res, { message: 'Token refresh endpoint' });
   }
+
+  private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const schema = Joi.object({
+      username: Joi.string().min(3).max(30),
+      email: Joi.string().email(),
+      password: Joi.string().min(6),
+      role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY'),
+    });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) {
+      this.sendErrorResponse(res, 400, error.details[0].message);
+      return;
+    }
+    const { email, role, password, username } = value;
+    const data: UserStrutcture = {
+      email,
+      username,
+      role,
+      password,
+    }
+
+    try {
+      const user = await this.db.getUserByEmail(value.email);
+
+      if (!user) {
+        this.sendErrorResponse(res, 404, 'User not found');
+        return;
+      }
+
+      if(!user.idTag){
+        Object.assign(data, { idTag: '' });
+        data.idTag = this.generateHashedCode(user.email + Date.now().toString());
+      }
+      console.log("edit user", data);
+      if (value.password) {
+        const hashedPassword = await bcrypt.hash(value.password, 12);
+        value.password = hashedPassword;
+      }
+
+      const updatedUser = await this.db.updateUser(value.email, data);
+
+      this.sendSuccessResponse(res, {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        role: updatedUser.role,
+      });
+    } catch (error) {
+      this.logger.error('Edit user error:', error);
+      this.sendErrorResponse(res, 500, 'Failed to edit user');
+    }
+  }
+
 
   public async streamMeterValues(req: AuthenticatedRequest, res: Response): Promise<void> {
     res.setHeader("Content-Type", "text/event-stream");
@@ -582,19 +645,19 @@ export class APIGateway {
         this.db.getTransactions({ skip, take: limitNumber, where, orderBy })
       ]);
 
-      if (!transactions || transactions.length === 0 ) {
+      if (!transactions || transactions.length === 0) {
         this.sendErrorResponse(res, 404, 'No transactions found');
         return;
       }
       this.sendSuccessResponse(res, {
-      transactions,
-      pagination: {
-        total,
-        page: pageNumber,
-        limit: limitNumber,
-        totalPages: Math.ceil(total / limitNumber)
-      }
-    });
+        transactions,
+        pagination: {
+          total,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages: Math.ceil(total / limitNumber)
+        }
+      });
     } catch (error) {
       this.logger.error('Error fetching transactions:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch transactions');
@@ -737,7 +800,15 @@ export class APIGateway {
   private async getUsers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Implementation for getting users
-      this.sendSuccessResponse(res, { message: 'Get users endpoint' });
+      const users = await this.db.getAllUsers();
+      if (!users || users.length === 0) {
+        throw new Error('No users found');
+      }
+
+      this.sendSuccessResponse(res, {
+        message: 'Get users endpoint',
+        users
+      });
     } catch (error) {
       this.logger.error('Error fetching users:', error);
       this.sendErrorResponse(res, 500, 'Failed to fetch users');
@@ -747,20 +818,28 @@ export class APIGateway {
   private async createUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Implementation for creating users
-      this.sendSuccessResponse(res, { message: 'Create user endpoint' });
-    } catch (error) {
-      this.logger.error('Error creating user:', error);
-      this.sendErrorResponse(res, 500, 'Failed to create user');
-    }
-  }
+      const { username, email, role, isActive, phone, password } = req.body;
+      if (!username || !email || isActive === undefined) {
+        this.sendErrorResponse(res, 400, 'Missing required fields');
+        return;
+      }
+      const tag = this.generateHashedCode(email + Date.now().toString());
+      console.log(tag);
+      const data = { username, email, role, isActive, phone, password, idTag: tag };
+      if (password) {
+        data.password = await bcrypt.hash(password, 12);
+      }
+      // Create the user in the database
+      const user = await this.db.createUser(data);
+      if (!user) {
+        throw new Error('Failed to create user');
+      }
+      this.sendSuccessResponse(res, { message: 'Create user endpoint', user });
+    } catch (error: Error | any) {
+      this.logger.error('Error creating user:', error.message);
+      const statusCode = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 500;
+      this.sendErrorResponse(res, statusCode, error.message || 'Failed to create user');
 
-  private async updateUser(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      // Implementation for updating users
-      this.sendSuccessResponse(res, { message: 'Update user endpoint' });
-    } catch (error) {
-      this.logger.error('Error updating user:', error);
-      this.sendErrorResponse(res, 500, 'Failed to update user');
     }
   }
 
