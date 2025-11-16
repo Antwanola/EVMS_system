@@ -12,6 +12,7 @@ import { APIResponse, APIUser } from '../types/ocpp_types';
 import { TransactionQueryParams } from '../types/TnxQueryType';
 import crypto from 'crypto';
 import { UserStrutcture } from '@/types/apiHelperypes';
+import { log } from 'console';
 
 
 interface AuthenticatedRequest extends Request {
@@ -103,9 +104,10 @@ export class APIGateway {
     this.router.get('/analytics/energy-consumption', this.authenticateUser.bind(this), this.getEnergyConsumption.bind(this));
 
     // User management routes (Admin only)
+    this.router.get('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']),this.getOneUser.bind(this));
     this.router.get('/users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.getUsers.bind(this));
     this.router.post('/create-users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.createUser.bind(this));
-    this.router.post('/user/update', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.editUser.bind(this))
+    this.router.post('/users/update', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.editUser.bind(this))
     this.router.delete('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.deleteUser.bind(this));
 
     // Health check
@@ -270,6 +272,22 @@ export class APIGateway {
     this.sendSuccessResponse(res, { message: 'Token refresh endpoint' });
   }
 
+
+  private async getOneUser(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      if(!id) return
+
+      const user = await this.db.getUserById(id);
+      if(!user){
+        this.sendErrorResponse(res, 404, 'User not found');
+      }
+      this.sendSuccessResponse(res, { message: 'User fetched successfully', user});
+    } catch (error) {
+      this.logger.error('Error fetching user:', error);
+      this.sendErrorResponse(res, 500, 'Failed to fetch user');
+    }
+  }
   private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     const schema = Joi.object({
       username: Joi.string().min(3).max(30),
@@ -312,10 +330,10 @@ export class APIGateway {
       const updatedUser = await this.db.updateUser(value.email, data);
 
       this.sendSuccessResponse(res, {
-        id: updatedUser.id,
-        username: updatedUser.username,
-        email: updatedUser.email,
-        role: updatedUser.role,
+        id: updatedUser?.id,
+        username: updatedUser?.username,
+        email: updatedUser?.email,
+        role: updatedUser?.role,
       });
     } catch (error) {
       this.logger.error('Edit user error:', error);
