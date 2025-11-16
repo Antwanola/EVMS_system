@@ -170,6 +170,7 @@ model User {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   idTag             String?
+  status            String?
   chargePointAccess ChargePointAccess[]
   permissions       Permission[]
 
