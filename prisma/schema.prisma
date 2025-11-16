@@ -159,8 +159,8 @@ model SampledValue {
 model User {
   id                String              @id @default(cuid())
   username          String              @unique
-  firstname         String
-  lastname          String
+  firstname         String?
+  lastname          String?
   email             String              @unique
   password          String
   role              UserRole            @default(VIEWER)
@@ -170,6 +170,7 @@ model User {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   idTag             String?
+  status            String?
   chargePointAccess ChargePointAccess[]
   permissions       Permission[]
 
