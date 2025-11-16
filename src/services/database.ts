@@ -2,7 +2,7 @@
 import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, ChargingData, User, Alarm } from '@prisma/client';
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
-import { UserWithRelations } from '../types/userWithRelations';
+import { UserSecureWithRelations, UserWithRelations } from '../types/userWithRelations';
 import { schemas } from '../middleware/validation';
 
 export class DatabaseService {
@@ -359,9 +359,6 @@ public async getTransactionsCount(where?: any): Promise<number> {
     username: string;
     email: string;
     password: string;
-    isActive?: boolean;
-    idTag?: string;
-    phone?: string;
     role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
   }): Promise<User> {
     return this.prisma.user.create({
@@ -369,19 +366,31 @@ public async getTransactionsCount(where?: any): Promise<number> {
     });
   }
 
+  public async getUserById(id: string): Promise<UserSecureWithRelations | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { // ⭐ Use 'select' to specify fields and relations
+            id: true,
+            username: true,
+            email: true,
+            role: true,
+            apiKey: true,
+            isActive: true,
+            phone: true,
+            createdAt: true,
+            updatedAt: true,
+            idTag: true,
+            // password is excluded
+            
+            // Include relations
+            permissions: true,
+            chargePointAccess: true,
+        },
+    });
+  }
   public async getUserByEmail(email: string): Promise<UserWithRelations | null> {
     return this.prisma.user.findUnique({
       where: { email },
-      include: {
-        permissions: true,
-        chargePointAccess: true,
-      },
-    });
-  }
-  public async updateUser(email: string, data: Partial<User>): Promise<UserWithRelations> {
-    return this.prisma.user.update({
-      where: { email },
-      data,
       include: {
         permissions: true,
         chargePointAccess: true,
@@ -399,15 +408,26 @@ public async getTransactionsCount(where?: any): Promise<number> {
     });
   }
 
-  public async getAllUsers(): Promise<UserWithRelations[]> {
-    return this.prisma.user.findMany({
-      include: {
-        permissions: true,
-        chargePointAccess: true,
-      },
-    });
-  }
 
+  public async updateUser(email: string, data: Partial<User>): Promise<UserWithRelations | null> {
+  return this.prisma.user.update({
+    where: { email },
+    data,
+    include: {
+      permissions: true,
+      chargePointAccess: true,
+    },
+  });
+}
+
+public async getAllUsers(): Promise<UserWithRelations[]> {
+  return this.prisma.user.findMany({
+    include: {
+      permissions: true,
+      chargePointAccess: true,
+    },
+  });
+}
   // Configuration Management
   public async getChargePointConfiguration(chargePointId: string, key?: string): Promise<any[]> {
     return this.prisma.chargePointConfiguration.findMany({

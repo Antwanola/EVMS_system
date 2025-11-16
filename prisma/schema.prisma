@@ -37,38 +37,38 @@ model ChargePoint {
 }
 
 model Connector {
-  id                   Int             @id @default(autoincrement())
-  chargePointId        String
-  connectorId          Int
-  type                 ConnectorType   @default(GBT)
-  status               ConnectorStatus @default(AVAILABLE)
-  errorCode            String?
-  info                 String?
-  vendorId             String?
-  vendorErrorCode      String?
-  maxPower             Float?
-  inputVoltage         Float           @default(0)
-  inputCurrent         Float           @default(0)
-  outputContactors     Boolean         @default(false)
-  outputVoltage        Float           @default(0)
-  outputEnergy         Float           @default(0)
-  chargingEnergy       Float           @default(0)
-  gunTemperature       Float           @default(25)
-  stateOfCharge        Float           @default(0)
-  chargeTime           Int             @default(0)
-  remainingTime        Int             @default(0)
-  demandCurrent        Float           @default(0)
-  connected            Boolean         @default(false)
-  lastUpdated          DateTime        @default(now())
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  chargingData         ChargingData[]
-  chargePoint          ChargePoint     @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
-  transactions         Transaction[]
-  
+  id               Int             @id @default(autoincrement())
+  chargePointId    String
+  connectorId      Int
+  type             ConnectorType   @default(GBT)
+  status           ConnectorStatus @default(AVAILABLE)
+  errorCode        String?
+  info             String?
+  vendorId         String?
+  vendorErrorCode  String?
+  maxPower         Float?
+  inputVoltage     Float           @default(0)
+  inputCurrent     Float           @default(0)
+  outputContactors Boolean         @default(false)
+  outputVoltage    Float           @default(0)
+  outputEnergy     Float           @default(0)
+  chargingEnergy   Float           @default(0)
+  gunTemperature   Float           @default(25)
+  stateOfCharge    Float           @default(0)
+  chargeTime       Int             @default(0)
+  remainingTime    Int             @default(0)
+  demandCurrent    Float           @default(0)
+  connected        Boolean         @default(false)
+  lastUpdated      DateTime        @default(now())
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  chargingData     ChargingData[]
+  chargePoint      ChargePoint     @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+  transactions     Transaction[]
+
   // 👇 added @unique to make it a proper one-to-one relation
-  currentTransactionId Int?            @unique
-  currentTransaction   Transaction?    @relation("ConnectorCurrentTransaction", fields: [currentTransactionId], references: [id])
+  currentTransactionId Int?         @unique
+  currentTransaction   Transaction? @relation("ConnectorCurrentTransaction", fields: [currentTransactionId], references: [id])
 
   @@unique([chargePointId, connectorId])
   @@map("connectors")
