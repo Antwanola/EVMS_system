@@ -290,21 +290,34 @@ export class APIGateway {
   }
   private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     const schema = Joi.object({
-      username: Joi.string().min(3).max(30),
-      email: Joi.string().email(),
-      password: Joi.string().min(6),
-      role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY'),
-    });
+  id: Joi.string().optional(),
+  username: Joi.string().min(3).max(30).required(),
+  firstname: Joi.string().min(3).max(40).required(),
+  lastname: Joi.string().min(3).max(40).required(),
+  status: Joi.boolean(),
+  email: Joi.string().email(),
+  password: Joi.string().min(6).optional(),
+  role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY'),
+  isActive: Joi.boolean().optional(),
+  apiKey: Joi.string().optional(),
+  phone: Joi.string().optional(),
+  idTag: Joi.string().optional(),
+});
 
     const { error, value } = schema.validate(req.body);
     if (error) {
       this.sendErrorResponse(res, 400, error.details[0].message);
       return;
     }
-    const { email, role, password, username } = value;
+    const { email, role, password, username, firstname, lastname, status, phone, isActive } = value;
     const data: UserStrutcture = {
       email,
       username,
+      firstname,
+      lastname,
+      isActive,
+      status,
+      phone,
       role,
       password,
     }
@@ -330,10 +343,15 @@ export class APIGateway {
       const updatedUser = await this.db.updateUser(value.email, data);
 
       this.sendSuccessResponse(res, {
-        id: updatedUser?.id,
-        username: updatedUser?.username,
-        email: updatedUser?.email,
-        role: updatedUser?.role,
+      email:updatedUser?.email,
+      username: updatedUser?.username,
+      firstname: updatedUser?.firstname,
+      lastname: updatedUser?.lastname,
+      isActive: updatedUser?.isActive,
+      status: updatedUser?.status,
+      phone: updatedUser?.phone,
+      role: updatedUser?.role,
+
       });
     } catch (error) {
       this.logger.error('Edit user error:', error);
