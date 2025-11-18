@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "users" ALTER COLUMN "isActive" DROP NOT NULL,
+ALTER COLUMN "isActive" SET DEFAULT 'Active',
+ALTER COLUMN "isActive" SET DATA TYPE TEXT;
