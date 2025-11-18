@@ -7,7 +7,7 @@ export interface UserStrutcture {
   email: string;
   password?: string;
   role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
-  isActive?: boolean;
+  isActive?: string;
   apiKey?: string;
   phone?: string;
   idTag?: string;

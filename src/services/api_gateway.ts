@@ -288,76 +288,90 @@ export class APIGateway {
       this.sendErrorResponse(res, 500, 'Failed to fetch user');
     }
   }
-  private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const schema = Joi.object({
-  id: Joi.string().optional(),
-  username: Joi.string().min(3).max(30).required(),
-  firstname: Joi.string().min(3).max(40).required(),
-  lastname: Joi.string().min(3).max(40).required(),
-  status: Joi.boolean(),
-  email: Joi.string().email(),
-  password: Joi.string().min(6).optional(),
-  role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY'),
-  isActive: Joi.boolean().optional(),
-  apiKey: Joi.string().optional(),
-  phone: Joi.string().optional(),
-  idTag: Joi.string().optional(),
-});
+ private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const schema = Joi.object({
+    id: Joi.string().optional(),
+    username: Joi.string().min(3).max(30).optional(), // Should be optional for partial updates
+    firstname: Joi.string().min(3).max(40).optional(),
+    lastname: Joi.string().min(3).max(40).optional(),
+    status: Joi.boolean().optional(),
+    email: Joi.string().email().required(), // Email needed to identify user
+    password: Joi.string().min(6).optional(),
+    role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY').optional(),
+    isActive: Joi.boolean().optional(),
+    apiKey: Joi.string().optional(),
+    phone: Joi.string().optional(),
+    idTag: Joi.string().optional(),
+  });
 
-    const { error, value } = schema.validate(req.body);
-    if (error) {
-      this.sendErrorResponse(res, 400, error.details[0].message);
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    this.sendErrorResponse(res, 400, error.details[0].message);
+    return;
+  }
+
+  try {
+    // Get existing user first
+    const user = await this.db.getUserByEmail(value.email);
+
+    if (!user) {
+      this.sendErrorResponse(res, 404, 'User not found');
       return;
     }
-    const { email, role, password, username, firstname, lastname, status, phone, isActive } = value;
-    const data: UserStrutcture = {
-      email,
-      username,
-      firstname,
-      lastname,
-      isActive,
-      status,
-      phone,
-      role,
-      password,
+
+    // Build update data object with only provided fields
+    const data: Partial<UserStrutcture> = {};
+
+    // Only add fields that were provided in the request
+    if (value.username !== undefined) data.username = value.username;
+    if (value.firstname !== undefined) data.firstname = value.firstname;
+    if (value.lastname !== undefined) data.lastname = value.lastname;
+    if (value.email !== undefined) data.email = value.email;
+    if (value.isActive !== undefined) data.isActive = value.isActive;
+    if (value.status !== undefined) data.status = value.status;
+    if (value.phone !== undefined) data.phone = value.phone;
+    if (value.role !== undefined) data.role = value.role;
+
+    // Handle password hashing if provided
+    if (value.password) {
+      const hashedPassword = await bcrypt.hash(value.password, 12);
+      data.password = hashedPassword;
     }
 
-    try {
-      const user = await this.db.getUserByEmail(value.email);
-
-      if (!user) {
-        this.sendErrorResponse(res, 404, 'User not found');
-        return;
-      }
-
-      if(!user.idTag){
-        Object.assign(data, { idTag: '' });
-        data.idTag = this.generateHashedCode(user.email + Date.now().toString());
-      }
-      console.log("edit user", data);
-      if (value.password) {
-        const hashedPassword = await bcrypt.hash(value.password, 12);
-        value.password = hashedPassword;
-      }
-
-      const updatedUser = await this.db.updateUser(value.email, data);
-
-      this.sendSuccessResponse(res, {
-      email:updatedUser?.email,
-      username: updatedUser?.username,
-      firstname: updatedUser?.firstname,
-      lastname: updatedUser?.lastname,
-      isActive: updatedUser?.isActive,
-      status: updatedUser?.status,
-      phone: updatedUser?.phone,
-      role: updatedUser?.role,
-
-      });
-    } catch (error) {
-      this.logger.error('Edit user error:', error);
-      this.sendErrorResponse(res, 500, 'Failed to edit user');
+    // Generate idTag if it doesn't exist
+    if (!user.idTag) {
+      data.idTag = this.generateHashedCode(user.email + Date.now().toString());
     }
+
+    console.log("edit user data:", data);
+
+    // Update user in database
+    const updatedUser = await this.db.updateUser(value.email, data);
+    
+    if (!updatedUser) {
+      throw new Error('Unable to update user');
+    }
+
+    // Return updated user data (excluding sensitive fields)
+    this.sendSuccessResponse(res, {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      username: updatedUser.username,
+      firstname: updatedUser.firstname,
+      lastname: updatedUser.lastname,
+      isActive: updatedUser.isActive,
+      status: updatedUser.status,
+      phone: updatedUser.phone,
+      role: updatedUser.role,
+      idTag: updatedUser.idTag,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt,
+    });
+  } catch (error) {
+    this.logger.error('Edit user error:', error);
+    this.sendErrorResponse(res, 500, 'Failed to edit user');
   }
+}
 
 
   public async streamMeterValues(req: AuthenticatedRequest, res: Response): Promise<void> {
