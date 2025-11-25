@@ -1,5 +1,5 @@
 // src/services/database.ts
-import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, ChargingData, User, Alarm } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
 import { UserSecureWithRelations, UserWithRelations } from '../types/userWithRelations';
@@ -13,7 +13,9 @@ export class DatabaseService {
     this.prisma = new PrismaClient({
       // log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
     });
+    this.chargePoint
   }
+
 
   public async connect(): Promise<void> {
     try {
@@ -130,7 +132,7 @@ export class DatabaseService {
         chargePointId,
         connectorId,
         type: (data.type as any) || 'TYPE2',
-        status: (data.status as any) || ConnectorStatus.AVAILABLE,
+        status: (data.status as any) || ConnectorStatus.UNAVAILABLE,
         currentTransactionId: transactionId ?? undefined,
         lastUpdated: new Date(),
         createdAt: new Date(),
@@ -182,20 +184,22 @@ export class DatabaseService {
     });
   }
 
-  // Transaction Management
   public async createTransaction(data: {
-    transactionId: number;
-    chargePointId: string;
-    connectorId: number;
-    idTag: string;
-    meterStart: number;
-    startTimestamp: Date;
-    reservationId?: number;
-  }): Promise<Transaction> {
-    return this.prisma.transaction.create({
-      data,
-    });
-  }
+  transactionId: number;
+  chargePointId: string;
+  connectorId: number;
+  idTag: string;
+  meterStart: number;
+  startTimestamp: Date;
+  reservationId?: number;
+}): Promise<Transaction> {
+  // Remove idTag from the data being passed to Prisma
+  const { idTag, ...transactionData } = data;
+  
+  return this.prisma.transaction.create({
+    data: transactionData,
+  });
+}
 
   public async stopTransaction(
     transactionId: number,
@@ -355,53 +359,51 @@ public async getTransactionsCount(where?: any): Promise<number> {
   }
 
   // User Management
-  public async createUser(data: {
-    username: string;
-    email: string;
-    password: string;
-    role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
-  }): Promise<User> {
-    return this.prisma.user.create({
-      data,
-    });
-  }
+public async createUser(data: {
+  username: string;
+  email: string;
+  password: string;
+  role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
+  phone?: string;
+  firstname?: string;
+  lastname?: string;
+  isActive?: boolean;
+  status?: string;
+  idTags?: string;  // Changed from idTag to idTags
+}): Promise<User> {
+  return this.prisma.user.create({
+    data,
+  });
+}
 
-  public async getUserById(id: string): Promise<UserSecureWithRelations | null> {
-    return this.prisma.user.findUnique({
-      where: { id },
-      select: { // ⭐ Use 'select' to specify fields and relations
-            id: true,
-            username: true,
-            email: true,
-            role: true,
-            apiKey: true,
-            isActive: true,
-            phone: true,
-            createdAt: true,
-            updatedAt: true,
-            idTag: true,
-            // password is excluded
-            
-            // Include relations
-            permissions: true,
-            chargePointAccess: true,
-        },
-    });
-  }
-  public async getUserByEmail(email: string): Promise<UserWithRelations | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
-      include: {
-        permissions: true,
-        chargePointAccess: true,
-      },
-    });
-  }
+public async getUserById(id: string): Promise<UserSecureWithRelations | null> {
+  return this.prisma.user.findUnique({
+    where: { id },
+    include: {
+      idTag: true,               // ✅ must match schema
+      permissions: true,
+      chargePointAccess: true,
+    },
+  });
+}
+
+
+public async getUserByEmail(email: string): Promise<UserWithRelations | null> {
+  return this.prisma.user.findUnique({
+    where: { email },
+    include: {
+      idTag: true,
+      permissions: true,
+      chargePointAccess: true,
+    },
+  });
+}
 
   public async getUserByApiKey(apiKey: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { apiKey },
       include: {
+        idtag: true,
         permissions: true,
         chargePointAccess: true,
       },

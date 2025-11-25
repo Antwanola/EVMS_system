@@ -1,23 +1,30 @@
-import { Prisma } from "@prisma/client";
+// src/types/userWithRelations.ts
+import type { User, Permission, ChargePointAccess, IdTag } from '@prisma/client';
 
-export type UserWithRelations = Prisma.UserGetPayload<{include: { permissions: true, chargePointAccess: true }}>;
+
+// Full user with relations
+export type UserWithRelations = User & {
+  idTag: IdTag | null; // one-to-one
+  permissions: Permission[];
+  chargePointAccess: ChargePointAccess[];
+};
 
 
-const userSecureSelect = Prisma.validator<Prisma.UserSelect>()({
-    id: true,
-    username: true,
-    email: true,
-    role: true,
-    apiKey: true,
-    isActive: true,
-    phone: true,
-    createdAt: true,
-    updatedAt: true,
-    idTag: true,
-    // Note: password is intentionally NOT listed here
-    
-    // Include the relations you need
-    permissions: true,
-    chargePointAccess: true,
-});
-export type UserSecureWithRelations = Prisma.UserGetPayload<{ select: typeof userSecureSelect }>;
+// Secure user select
+export type UserSecureWithRelations = {
+  id: string;
+  username: string;
+  firstname: string | null;
+  lastname: string | null;
+  email: string;
+  role: User['role'];
+  apiKey?: string | null;            // optional, only if exists in schema
+  isActive: boolean;
+  status: string | null;
+  phone: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  idTag: IdTag | null;               // one-to-one
+  permissions: Permission[];
+  chargePointAccess: ChargePointAccess[];
+};

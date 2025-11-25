@@ -8,7 +8,7 @@ import { Logger } from '../Utils/logger';
 import { OCPPServer } from '../services/ocpp_server';
 import { DatabaseService } from '../services/database';
 import { RedisService } from '../services/redis';
-import { APIResponse, APIUser } from '../types/ocpp_types';
+import { APIResponse, APIUser, ChargingStationData } from '../types/ocpp_types';
 import { TransactionQueryParams } from '../types/TnxQueryType';
 import crypto from 'crypto';
 import { UserStrutcture } from '@/types/apiHelperypes';
@@ -23,7 +23,7 @@ export class APIGateway {
   private router: Router;
   private logger = Logger.getInstance();
   private rateLimiter?: RateLimiterRedis;
-  public clients: Array<Response> = [];
+ public clients: Map<Response, { connectorId?: number }> = new Map();
 
   constructor(
     private ocppServer: OCPPServer | null,
@@ -107,7 +107,7 @@ export class APIGateway {
     this.router.get('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']),this.getOneUser.bind(this));
     this.router.get('/users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.getUsers.bind(this));
     this.router.post('/create-users', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.createUser.bind(this));
-    this.router.post('/users/update', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.editUser.bind(this))
+    this.router.post('/users/update', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.editUser.bind(this))
     this.router.delete('/users/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.deleteUser.bind(this));
 
     // Health check
@@ -288,14 +288,17 @@ export class APIGateway {
       this.sendErrorResponse(res, 500, 'Failed to fetch user');
     }
   }
- private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
+
+
+  
+private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
   const schema = Joi.object({
     id: Joi.string().optional(),
-    username: Joi.string().min(3).max(30).optional(), // Should be optional for partial updates
+    username: Joi.string().min(3).max(30).optional(),
     firstname: Joi.string().min(3).max(40).optional(),
     lastname: Joi.string().min(3).max(40).optional(),
-    status: Joi.boolean().optional(),
-    email: Joi.string().email().required(), // Email needed to identify user
+    status: Joi.string().optional(),
+    email: Joi.string().email().required(),
     password: Joi.string().min(6).optional(),
     role: Joi.string().valid('ADMIN', 'OPERATOR', 'VIEWER', 'THIRD_PARTY').optional(),
     isActive: Joi.boolean().optional(),
@@ -339,7 +342,9 @@ export class APIGateway {
     }
 
     // Generate idTag if it doesn't exist
-    if (!user.idTag) {
+    // Cast user to any to bypass type checking for idTag property
+    const userWithIdTag = user as any;
+    if (!userWithIdTag.idTag) {
       data.idTag = this.generateHashedCode(user.email + Date.now().toString());
     }
 
@@ -352,6 +357,9 @@ export class APIGateway {
       throw new Error('Unable to update user');
     }
 
+    // Cast updatedUser to any to bypass type checking for idTag property
+    const updatedUserWithIdTag = updatedUser as any;
+
     // Return updated user data (excluding sensitive fields)
     this.sendSuccessResponse(res, {
       id: updatedUser.id,
@@ -363,7 +371,7 @@ export class APIGateway {
       status: updatedUser.status,
       phone: updatedUser.phone,
       role: updatedUser.role,
-      idTag: updatedUser.idTag,
+      idTag: updatedUserWithIdTag.idTag || updatedUserWithIdTag.idTags || null,
       createdAt: updatedUser.createdAt,
       updatedAt: updatedUser.updatedAt,
     });
@@ -373,33 +381,46 @@ export class APIGateway {
   }
 }
 
+// Store clients with their connector filter
+// private clients: Map<Response, { connectorId?: number }> = new Map();
 
-  public async streamMeterValues(req: AuthenticatedRequest, res: Response): Promise<void> {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
+public async streamMeterValues(req: AuthenticatedRequest, res: Response): Promise<void> {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
 
-    this.clients.push(res);
+  // Get connector ID from query parameter
+  const connectorId = req.query.connectorId 
+    ? parseInt(req.query.connectorId as string) 
+    : undefined;
 
-    req.on("close", () => {
-      const index = this.clients.indexOf(res);
-      if (index !== -1) this.clients.splice(index, 1);
-    });
+  // Store client with their connector filter
+  this.clients.set(res, { connectorId });
 
-    // Keep connection alive - don't call next() or return
-  }
+  req.on("close", () => {
+    this.clients.delete(res);
+  });
 
-  public sendMeterValueToClients = (data: any): void => {
-    for (const client of this.clients) {
-      try {
-        client.write(`data: ${JSON.stringify(data)}\n\n`);
-      } catch (error) {
-        this.logger.error('Error sending meter value to client:', error);
+  // Keep connection alive - don't call next() or return
+}
+
+public sendMeterValueToClients = (data: any): void => {
+  const connectorId = data.connectorId || data.connector_id;
+  
+  for (const [client, filter] of this.clients.entries()) {
+    try {
+      // If client has a connector filter, only send matching data
+      if (filter.connectorId !== undefined && filter.connectorId !== connectorId) {
+        continue;
       }
+      
+      client.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (error) {
+      this.logger.error('Error sending meter value to client:', error);
     }
   }
-
+}
   // Charge point endpoints
   private async getChargePoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -494,29 +515,56 @@ export class APIGateway {
     }
   }
 
-  private async getChargePointStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      if (!this.ocppServer) {
-        this.sendErrorResponse(res, 503, 'OCPP Server not initialized');
-        return;
-      }
-
-      const { id } = req.params;
-      const isConnected = this.ocppServer.getConnectedChargePoints().includes(id);
-      const data = this.ocppServer.getChargePointData(id);
-
-      this.sendSuccessResponse(res, {
-        chargePointId: id,
-        isConnected,
-        status: data?.status || 'UNAVAILABLE',
-        lastSeen: data?.timestamp || null,
-        connectorData: data,
-      });
-    } catch (error) {
-      this.logger.error('Error fetching charge point status:', error);
-      this.sendErrorResponse(res, 500, 'Failed to fetch charge point status');
+ private async getChargePointStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    if (!this.ocppServer) {
+      this.sendErrorResponse(res, 503, 'OCPP Server not initialized');
+      return;
     }
+
+    const { id } = req.params;
+    const isConnected = this.ocppServer.getConnectedChargePoints().includes(id);
+    const data = this.ocppServer.getChargePointData(id); // This now returns ChargingStationData[]
+
+    // Helper function to get overall status from all connectors
+    const getOverallStatus = (connectors: ChargingStationData[] | null): string => {
+      if (!connectors || connectors.length === 0) return 'UNAVAILABLE';
+      
+      // Priority: Charging > Preparing > SuspendedEV > SuspendedEVSE > Finishing > Available > others
+      if (connectors.some(c => c.status === 'CHARGING')) return 'CHARGING';
+      if (connectors.some(c => c.status === 'PREPARING')) return 'PREPARING';
+      if (connectors.some(c => c.status === 'SUSPENDED_EV')) return 'SUSPENDED_EV';
+      if (connectors.some(c => c.status === 'SUSPENDED_EVSE')) return 'SUSPENDED_EVSE';
+      if (connectors.some(c => c.status === 'FINISHING')) return 'FINISHING';
+      if (connectors.every(c => c.status === 'AVAILABLE')) return 'AVAILABLE';
+      
+      // Default to first connector's status
+      return connectors[0]?.status || 'UNAVAILABLE';
+    };
+
+    // Helper function to get most recent timestamp
+    const getMostRecentTimestamp = (connectors: ChargingStationData[] | null): Date | null => {
+      if (!connectors || connectors.length === 0) return null;
+      
+      return connectors.reduce((latest, connector) => {
+        if (!connector.timestamp) return latest;
+        return !latest || connector.timestamp > latest ? connector.timestamp : latest;
+      }, null as Date | null);
+    };
+
+    this.sendSuccessResponse(res, {
+      chargePointId: id,
+      isConnected,
+      status: getOverallStatus(data),
+      lastSeen: getMostRecentTimestamp(data),
+      connectorData: data, // This is now an array of all connectors
+      connectorCount: data?.length || 0,
+    });
+  } catch (error) {
+    this.logger.error('Error fetching charge point status:', error);
+    this.sendErrorResponse(res, 500, 'Failed to fetch charge point status');
   }
+}
 
   // Real-time data endpoints
   private async getAllRealtimeData(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -717,7 +765,19 @@ export class APIGateway {
   private async getTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const transaction = await this.db.getTransaction(parseInt(id));
+      let convertedId;
+      if (!id) {
+        this.sendErrorResponse(res, 400, 'Transaction ID is required');
+        return;
+      }
+      if(typeof(id) === "string"){
+        convertedId = Number(id);
+        if(isNaN(convertedId)){
+          this.sendErrorResponse(res, 400, 'Transaction ID must be a number');
+          return;
+        }
+      }
+      const transaction = await this.db.getTransaction((convertedId!));
 
       if (!transaction) {
         this.sendErrorResponse(res, 404, 'Transaction not found');

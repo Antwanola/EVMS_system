@@ -233,12 +233,26 @@ export interface ChargePointConnection {
   lastSeen: Date;
   bootNotificationSent: boolean;
   heartbeatInterval: number;
-  currentData?: ChargingStationData;
+  currentData?: {
+    connectors: Record<number, ChargingStationData>;
+  };
   connectors: Map<number, ChargingStationData>; // Changed from single currentData
   numberOfConnectors?: number; // Track total connectors
   meters?: Map<string, MeterData>; // Meter ID -> Meter readings
   meterConfiguration?: MeterConfiguration;
 }
+
+export interface ConfigRequestValues {
+  key?: string;
+  value?: string;
+  readonly?: boolean;
+}
+
+export interface ConnectorNumResponse {
+  connectorNum: number;
+}
+
+
  export interface ConnectorStatus {
   connectorId: number;
   ChargePointId: string;

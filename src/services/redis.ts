@@ -38,10 +38,18 @@ export class RedisService {
     }
   }
 
+  /**
+   * Set a string value in Redis
+   */
   public async set(key: string, value: string, ttl?: number): Promise<void> {
     try {
+      // Validate that value is a string
+      if (typeof value !== 'string') {
+        throw new TypeError(`Value must be a string, got ${typeof value}`);
+      }
+
       if (ttl) {
-        await this.client.setEx(key, ttl, value);
+        await this.client.set(key, value, { EX: ttl });
       } else {
         await this.client.set(key, value);
       }
@@ -51,11 +59,41 @@ export class RedisService {
     }
   }
 
+  /**
+   * Set a JSON object in Redis (automatically stringified)
+   */
+  public async setJSON(key: string, value: any, ttl?: number): Promise<void> {
+    try {
+      const stringValue = JSON.stringify(value);
+      await this.set(key, stringValue, ttl);
+    } catch (error) {
+      this.logger.error(`Error setting JSON in Redis key ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a string value from Redis
+   */
   public async get(key: string): Promise<string | null> {
     try {
       return await this.client.get(key);
     } catch (error) {
       this.logger.error(`Error getting Redis key ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get and parse a JSON object from Redis
+   */
+  public async getJSON<T = any>(key: string): Promise<T | null> {
+    try {
+      const value = await this.client.get(key);
+      if (!value) return null;
+      return JSON.parse(value) as T;
+    } catch (error) {
+      this.logger.error(`Error getting JSON from Redis key ${key}:`, error);
       throw error;
     }
   }
@@ -83,4 +121,3 @@ export class RedisService {
     return this.client;
   }
 }
-

@@ -20,8 +20,10 @@ import {
   StopTransactionResponse,
   AuthorizeRequest,
   AuthorizeResponse,
+  ChargingStationData,
 } from "../types/ocpp_types";
 import { APIGateway } from "../services/api_gateway";
+import crypto from "crypto"
 
 interface PendingCall {
   resolve: (value: any) => void;
@@ -38,8 +40,6 @@ export class OCPPMessageHandler {
     private readonly redis: RedisService,
     private readonly apiGateway: APIGateway
   ) {}
-
-
 
   // ==================== MESSAGE ROUTING ====================
 
@@ -234,10 +234,26 @@ export class OCPPMessageHandler {
     payload: StatusNotificationRequest,
     connection: ChargePointConnection
   ): Promise<StatusNotificationResponse> {
-    this.logger.info(`Status notification from ${chargePointId}:`, {payload});
-//TODO: get connections from ocpp server
-const getAllConnections = connection
-console.log('All Connections:', getAllConnections.currentData);
+    this.logger.info(`Status notification from ${chargePointId}:`, { payload });
+
+    const connectorId = payload.connectorId || 1;
+
+    // Get or create connector data
+    if (!connection.connectors.has(connectorId)) {
+      connection.connectors.set(connectorId, this.getDefaultChargingData(chargePointId, connectorId));
+      this.logger.info(`Created new connector ${connectorId} for ${chargePointId}`);
+    }
+
+    const connectorData = connection.connectors.get(connectorId)!;
+
+    // Update connector data
+    connectorData.status = payload.status as any;
+    connectorData.connectorId = payload.connectorId;
+    connectorData.timestamp = new Date();
+
+    console.log('Connector Data before update:', connectorData);
+
+    // Update database
     await this.db.updateConnectorStatus(
       chargePointId,
       payload.connectorId,
@@ -245,13 +261,6 @@ console.log('All Connections:', getAllConnections.currentData);
       payload.errorCode,
       payload.vendorErrorCode
     );
-
-    // Update connection's current data if exists
-    if (getAllConnections.currentData) {
-      getAllConnections.currentData.status = payload.status;
-      getAllConnections.currentData.connectorId = payload.connectorId;
-      console.log('Current Data before update:', getAllConnections.currentData);
-    }
 
     // Handle alarms if there's an error
     if (payload.errorCode && payload.errorCode !== "NoError") {
@@ -263,12 +272,15 @@ console.log('All Connections:', getAllConnections.currentData);
         message: payload.info || `Error: ${payload.errorCode}`,
       });
 
-      if (connection.currentData) {
-        connection.currentData.alarm = payload.errorCode;
-      }
-    } else if (connection.currentData) {
-      connection.currentData.alarm = null;
+      connectorData.alarm = payload.errorCode;
+    } else {
+      connectorData.alarm = null;
     }
+
+    // Save updated connector data back to the Map
+    connection.connectors.set(connectorId, connectorData);
+
+    console.log('All Connectors:', Array.from(connection.connectors.values()));
 
     return {};
   }
@@ -289,9 +301,9 @@ console.log('All Connections:', getAllConnections.currentData);
         unit: sv.unit,
       }));
       this.apiGateway.sendMeterValueToClients({
-      chargePointId,
-      timestamp: meterValue.timestamp,
-      sampledValues,
+        chargePointId,
+        timestamp: meterValue.timestamp,
+        sampledValues,
       })
       // await this.db.saveMeterValues({
       //   transactionId: payload.transactionId,
@@ -309,7 +321,14 @@ console.log('All Connections:', getAllConnections.currentData);
     connection: ChargePointConnection
   ): Promise<StartTransactionResponse> {
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
-    console.log("The start config",{ StartTransaction: payload });
+    console.log("The start config", { StartTransaction: payload });
+
+    const connectorId = payload.connectorId || 1;
+
+    // Ensure connector exists
+    if (!connection.connectors.has(connectorId)) {
+      connection.connectors.set(connectorId, this.getDefaultChargingData(chargePointId, connectorId));
+    }
 
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
@@ -323,7 +342,8 @@ console.log('All Connections:', getAllConnections.currentData);
     //   };
     // }
 
-    const transactionId = Math.floor(Math.random() * 1000000) + 1;
+    const transactionId = 100000 + crypto.randomInt(0, 900000);
+    console.log({ transactionId });
 
     const transaction = await this.db.createTransaction({
       transactionId,
@@ -339,14 +359,15 @@ console.log('All Connections:', getAllConnections.currentData);
       chargePointId,
       payload.connectorId,
       payload,
-      transaction.id
-
+      transactionId
     );
 
-    if (connection.currentData) {
-      connection.currentData.status = "CHARGING";
-      connection.currentData.connected = true;
-    }
+    // Update connector data
+    const connectorData = connection.connectors.get(connectorId)!;
+    connectorData.status = "Charging" as any;
+    connectorData.connected = true;
+    connectorData.timestamp = new Date();
+    connection.connectors.set(connectorId, connectorData);
 
     return {
       transactionId,
@@ -375,6 +396,8 @@ console.log('All Connections:', getAllConnections.currentData);
       };
     }
 
+    const connectorId = transaction.connectorId || 1;
+
     await this.db.stopTransaction(
       payload.transactionId,
       payload.meterStop,
@@ -388,11 +411,15 @@ console.log('All Connections:', getAllConnections.currentData);
       "AVAILABLE"
     );
 
-    if (connection.currentData) {
-      connection.currentData.status = "AVAILABLE";
-      connection.currentData.connected = false;
-      connection.currentData.stopReason = payload.reason || null;
-      connection.currentData.chargingEnergy = payload.meterStop - transaction.meterStart;
+    // Update connector data
+    if (connection.connectors.has(connectorId)) {
+      const connectorData = connection.connectors.get(connectorId)!;
+      connectorData.status = "Available" as any;
+      connectorData.connected = false;
+      connectorData.stopReason = payload.reason || null;
+      connectorData.chargingEnergy = payload.meterStop -  transaction.meterStart;
+      connectorData.timestamp = new Date();
+      connection.connectors.set(connectorId, connectorData);
     }
 
     // Process transaction data if provided
@@ -464,5 +491,29 @@ console.log('All Connections:', getAllConnections.currentData);
     if (warningCodes.includes(errorCode)) return "WARNING";
 
     return "INFO";
+  }
+
+  private getDefaultChargingData(chargePointId: string, connectorId: number): ChargingStationData {
+    return {
+      chargePointId,
+      connectorId,
+      gunType: 'TYPE2' as any,
+      status: 'Available' as any,
+      inputVoltage: 0,
+      inputCurrent: 0,
+      outputContactors: false,
+      outputVoltage: 0,
+      outputEnergy: 0,
+      chargingEnergy: 0,
+      alarm: null,
+      stopReason: null,
+      connected: false,
+      gunTemperature: 25,
+      stateOfCharge: 0,
+      chargeTime: 0,
+      remainingTime: 0,
+      demandCurrent: 0,
+      timestamp: new Date()
+    };
   }
 }
