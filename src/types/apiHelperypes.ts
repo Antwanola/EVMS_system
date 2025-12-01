@@ -3,12 +3,13 @@ export interface UserStrutcture {
   username: string;
   firstname: string;
   lastname: string;
-  status: boolean;
+  status: string;
   email: string;
   password?: string;
   role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
   isActive?: boolean;
   apiKey?: string;
-  phone?: string;
   idTag?: string;
+  phone?: string;
+  idTags?: string;
 }

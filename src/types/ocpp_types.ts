@@ -1,3 +1,4 @@
+import IdTag from '@prisma/client';
 // src/types/ocpp.types.ts
 
 export enum MessageType {
@@ -118,9 +119,11 @@ export interface StartTransactionRequest {
   connectorId: number;
   idTag: string;
   meterStart: number;
-  timestamp: string;
-  reservationId?: number;
+  timestamp: string;   // RFC3339 datetime string
+  transactionId: number;   // REQUIRED
+  reservationId?: number;  // OPTIONAL
 }
+
 
 export interface StopTransactionRequest {
   transactionId: number;
@@ -233,12 +236,26 @@ export interface ChargePointConnection {
   lastSeen: Date;
   bootNotificationSent: boolean;
   heartbeatInterval: number;
-  currentData?: ChargingStationData;
+  currentData?: {
+    connectors: Record<number, ChargingStationData>;
+  };
   connectors: Map<number, ChargingStationData>; // Changed from single currentData
   numberOfConnectors?: number; // Track total connectors
   meters?: Map<string, MeterData>; // Meter ID -> Meter readings
   meterConfiguration?: MeterConfiguration;
 }
+
+export interface ConfigRequestValues {
+  key?: string;
+  value?: string;
+  readonly?: boolean;
+}
+
+export interface ConnectorNumResponse {
+  connectorNum: number;
+}
+
+
  export interface ConnectorStatus {
   connectorId: number;
   ChargePointId: string;
@@ -271,16 +288,36 @@ interface MeterMeasurement {
 export interface APIUser {
   id: string;
   username: string;
-  role: 'admin' | 'operator' | 'viewer' | 'third_party';
+  email: string;
+  password: string; // The hashed password string
+  role: 'OPERATOR' | 'ADMIN' | 'VIEWER' | 'THIRD_PARTY' | string; // Use uppercase for the database role
+  phone: string;
+  firstname: string;
+  lastname: string;
+  isActive: boolean;
+  status: string; // 'Active'
+  apiKey: string | null;
+  idTagId: string; // The foreign key pointing to the idTag object
+  createdAt: string;
+  updatedAt: string;
+  
+  // The nested object containing the full ID tag details
+  idTag: IdTagDetails | null; 
+  
   permissions: string[];
-  apiKey?: string;
-  chargePointAccess?: string[];
-  email?: string;
-  isActive?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
+  chargePointAccess: string[];
 }
 
+
+export interface IdTagDetails {
+  id: string;
+  idTag: string;
+  parentIdTag: string | null;
+  status: 'ACCEPTED' | 'BLOCKED' | 'EXPIRED' | 'INVALID' | string; // Use string for general statuses
+  expiryDate: string; // Stored as ISO string
+  createdAt: string;
+  updatedAt: string;
+}
 interface MeterConfiguration {
   supportedMeasurands: string[];
   samplingInterval: number;

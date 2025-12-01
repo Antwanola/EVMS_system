@@ -1,5 +1,5 @@
 // src/services/database.ts
-import { PrismaClient, ChargePoint, Connector, ConnectorStatus, Transaction, ChargingData, User, Alarm } from '@prisma/client';
+import { PrismaClient, Prisma, ChargePoint, Connector, User, Transaction, IdTag, ConnectorStatus, ChargingData, Alarm } from '@prisma/client';
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
 import { UserSecureWithRelations, UserWithRelations } from '../types/userWithRelations';
@@ -8,12 +8,16 @@ import { schemas } from '../middleware/validation';
 export class DatabaseService {
   private prisma: PrismaClient;
   private logger = Logger.getInstance();
+  private ChargePoint;
 
   constructor() {
     this.prisma = new PrismaClient({
       // log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
+      datasourceUrl: process.env.DATABASE_URL
     });
+    this.ChargePoint = this.prisma.chargePoint
   }
+
 
   public async connect(): Promise<void> {
     try {
@@ -77,16 +81,33 @@ export class DatabaseService {
     });
   }
 
-  public async updateChargePointStatus(chargePointId: string, isOnline: boolean): Promise<void> {
-    await this.prisma.chargePoint.update({
-      where: { id: chargePointId },
-      data: {
-        isOnline,
-        lastSeen: new Date(),
-        updatedAt: new Date(),
-      },
-    });
+
+  public async getIdTag(idTag: string): Promise<IdTag | null> {
+    const foundItem = await this.prisma.idTag.findUnique({
+      where: { idTag}
+    })
+    return foundItem;
   }
+
+ public async updateChargePointStatus(chargePointId: string, isOnline: boolean): Promise<void> {
+  await this.prisma.chargePoint.upsert({
+    where: { id: chargePointId },
+    update: {
+      isOnline,
+      lastSeen: new Date(),
+      updatedAt: new Date(),
+    },
+    create: {
+      id: chargePointId,
+      vendor: 'Unknown',       // provide default values
+      model: 'Unknown',        // provide default values
+      isOnline,
+      lastSeen: new Date(),
+      createdAt: new Date(),
+    },
+  });
+}
+
 
   public async getChargePoint(id: string): Promise<ChargePoint | null> {
     return this.prisma.chargePoint.findUnique({
@@ -130,7 +151,7 @@ export class DatabaseService {
         chargePointId,
         connectorId,
         type: (data.type as any) || 'TYPE2',
-        status: (data.status as any) || ConnectorStatus.AVAILABLE,
+        status: (data.status as any) || ConnectorStatus.UNAVAILABLE,
         currentTransactionId: transactionId ?? undefined,
         lastUpdated: new Date(),
         createdAt: new Date(),
@@ -182,20 +203,48 @@ export class DatabaseService {
     });
   }
 
-  // Transaction Management
   public async createTransaction(data: {
-    transactionId: number;
-    chargePointId: string;
-    connectorId: number;
-    idTag: string;
-    meterStart: number;
-    startTimestamp: Date;
-    reservationId?: number;
-  }): Promise<Transaction> {
-    return this.prisma.transaction.create({
-      data,
+  transactionId: number;
+  chargePointId: string;
+  connectorId: number;
+  idTag: string;
+  meterStart: number;
+  startTimestamp: Date;
+  reservationId?: number;
+}): Promise<Transaction> {
+
+  const idTagRecord = await this.prisma.idTag.findUnique({
+      where: {
+        idTag: data.idTag, // Lookup using the physical tag value
+      },
+      select: { id: true },
     });
-  }
+
+    const idTagDbId = idTagRecord?.id;
+
+    const transactionCreationData: Prisma.TransactionCreateInput = {
+      transactionId: data.transactionId,
+      chargePoint: { connect: { id: data.chargePointId } }, // Assuming relation setup
+      connector: {
+        connect: {
+          chargePointId_connectorId: {
+            chargePointId: data.chargePointId,
+            connectorId: data.connectorId,
+          },
+        },
+      },
+      meterStart: data.meterStart,
+      startTimestamp: data.startTimestamp,
+      reservationId: data.reservationId,
+      
+      // Use the database ID for the relation:
+      ...(idTagDbId && { idTag: { connect: { id: idTagDbId } } }),
+    }
+  
+ return this.prisma.transaction.create({
+      data: transactionCreationData,
+    });
+}
 
   public async stopTransaction(
     transactionId: number,
@@ -355,74 +404,118 @@ public async getTransactionsCount(where?: any): Promise<number> {
   }
 
   // User Management
-  public async createUser(data: {
-    username: string;
-    email: string;
-    password: string;
-    role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
-  }): Promise<User> {
-    return this.prisma.user.create({
-      data,
-    });
-  }
-
-  public async getUserById(id: string): Promise<UserSecureWithRelations | null> {
-    return this.prisma.user.findUnique({
-      where: { id },
-      select: { // ⭐ Use 'select' to specify fields and relations
-            id: true,
-            username: true,
-            email: true,
-            role: true,
-            apiKey: true,
-            isActive: true,
-            phone: true,
-            createdAt: true,
-            updatedAt: true,
-            idTag: true,
-            // password is excluded
-            
-            // Include relations
-            permissions: true,
-            chargePointAccess: true,
-        },
-    });
-  }
-  public async getUserByEmail(email: string): Promise<UserWithRelations | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
-      include: {
-        permissions: true,
-        chargePointAccess: true,
-      },
-    });
-  }
-
-  public async getUserByApiKey(apiKey: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { apiKey },
-      include: {
-        permissions: true,
-        chargePointAccess: true,
-      },
-    });
-  }
-
-
-  public async updateUser(email: string, data: Partial<User>): Promise<UserWithRelations | null> {
-  return this.prisma.user.update({
-    where: { email },
+public async createUser(data: {
+  username: string;
+  email: string;
+  password: string;
+  role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'THIRD_PARTY';
+  phone?: string;
+  firstname?: string;
+  lastname?: string;
+  isActive?: boolean;
+  status?: string;
+  idTags?: string;  // Changed from idTag to idTags
+}): Promise<User> {
+  return this.prisma.user.create({
     data,
+  });
+}
+
+public async getUserById(id: string): Promise<UserSecureWithRelations | null> {
+  return this.prisma.user.findUnique({
+    where: { id },
     include: {
+      idTag: true,               // ✅ must match schema
       permissions: true,
       chargePointAccess: true,
     },
   });
 }
 
+
+public async getUserByEmail(email: string): Promise<UserWithRelations | null> {
+  return this.prisma.user.findUnique({
+    where: { email },
+    include: {
+      idTag: true,
+      permissions: true,
+      chargePointAccess: true,
+    },
+  });
+}
+
+  public async getUserByApiKey(apiKey: string): Promise<User | null> {
+    return this.prisma.user.findUnique({
+      where: { apiKey },
+      include: {
+        idTag: true,
+        permissions: true,
+        chargePointAccess: true,
+      },
+    });
+  }
+
+
+//   public async updateUser(email: string, data: Partial<User>): Promise<UserWithRelations | null> {
+//   return this.prisma.user.update({
+//     where: { email },
+//     data,
+//     include: {
+//       permissions: true,
+//       chargePointAccess: true,
+//     },
+//   });
+// }
+
+
+public async updateUser(email: string, data: Partial<User>): Promise<UserWithRelations | null> {
+  // Extract idTag from data since it needs special handling
+  const { idTag, idTagId, ...userData } = data as any;
+  
+  // Build the update data object
+  const updateData: any = { ...userData };
+  
+  // Handle idTag relation if an idTag string is provided
+  if (idTag !== undefined) {
+    if (idTag === null || idTag === '') {
+      // Disconnect the relation if idTag is null or empty
+      updateData.idTag = {
+        disconnect: true
+      };
+    } else {
+      // connectOrCreate will create the IdTag if it doesn't exist
+      updateData.idTag = {
+        connectOrCreate: {
+          where: { idTag: idTag },
+          create: { 
+            idTag: idTag,
+            status: 'ACCEPTED',
+            // expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year from now
+          }
+        }
+      };
+    }
+  }
+  
+  return this.prisma.user.update({
+    where: { email },
+    data: updateData,
+    include: {
+      permissions: true,
+      chargePointAccess: true,
+      idTag: true
+    },
+  });
+}
+
+
+
+
+
 public async getAllUsers(): Promise<UserWithRelations[]> {
   return this.prisma.user.findMany({
     include: {
+      idTag: true,
       permissions: true,
       chargePointAccess: true,
     },
@@ -562,8 +655,8 @@ public async getAllUsers(): Promise<UserWithRelations[]> {
     parentIdTag?: string;
     status?: 'ACCEPTED' | 'BLOCKED' | 'EXPIRED' | 'INVALID' | 'CONCURRENT_TX';
     expiryDate?: Date;
-  }): Promise<void> {
-    await this.prisma.idTag.create({
+  }): Promise<IdTag> {
+    const tag = await this.prisma.idTag.create({
       data: {
         idTag: data.idTag,
         parentIdTag: data.parentIdTag,
@@ -571,6 +664,8 @@ public async getAllUsers(): Promise<UserWithRelations[]> {
         expiryDate: data.expiryDate,
       },
     });
+
+    return tag
   }
 
   // Utility methods

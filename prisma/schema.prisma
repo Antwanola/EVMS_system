@@ -5,8 +5,12 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+   url      = env("DATABASE_URL")
 }
+
+
+
+
 
 model ChargePoint {
   id                   String                     @id
@@ -75,24 +79,26 @@ model Connector {
 }
 
 model Transaction {
-  id             Int          @id @default(autoincrement())
-  transactionId  Int          @unique
-  chargePointId  String
-  connectorId    Int
-  idTag          String
-  meterStart     Float
-  meterStop      Float?
+  id            Int     @id @default(autoincrement())
+  transactionId Int     @unique
+  chargePointId String
+  connectorId   Int
+  idTagId       String?
+  idTag         IdTag?  @relation(fields: [idTagId], references: [id])
+  meterStart    Float
+  meterStop     Float?
+
   startTimestamp DateTime
   stopTimestamp  DateTime?
   stopReason     StopReason?
   reservationId  Int?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  meterValues    MeterValue[]
-  connector      Connector    @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
-  chargePoint    ChargePoint  @relation(fields: [chargePointId], references: [id])
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  // 👇 opposite side of the relation
+  meterValues MeterValue[]
+  connector   Connector    @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
+  chargePoint ChargePoint  @relation(fields: [chargePointId], references: [id])
+
   connectorCurrentTransaction Connector? @relation("ConnectorCurrentTransaction")
 
   @@map("transactions")
@@ -129,13 +135,14 @@ model ChargingData {
 }
 
 model MeterValue {
-  id            String         @id @default(cuid())
+  id            String   @id @default(cuid())
   transactionId Int?
   connectorId   Int
   chargePointId String
   timestamp     DateTime
-  createdAt     DateTime       @default(now())
-  Transaction   Transaction?   @relation(fields: [transactionId], references: [transactionId])
+  createdAt     DateTime @default(now())
+
+  transaction   Transaction?   @relation(fields: [transactionId], references: [id])
   sampledValues SampledValue[]
 
   @@map("meter_values")
@@ -157,24 +164,27 @@ model SampledValue {
 }
 
 model User {
-  id                String              @id @default(cuid())
-  username          String              @unique
-  firstname         String?
-  lastname          String?
-  email             String              @unique
-  password          String
-  role              UserRole            @default(VIEWER)
-  apiKey            String?             @unique
-  isActive          String?             @default("Active")
-  phone             String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  idTag             String?
-  status            Boolean?
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  role      UserRole @default(VIEWER)
+  phone     String?
+  firstname String?
+  lastname  String?
+  isActive  Boolean  @default(true)
+  status    String?  @default("Active")
+  apiKey    String?  @unique
+
+  // One-to-one relation
+  idTag   IdTag?  @relation(fields: [idTagId], references: [id])
+  idTagId String? @unique // foreign key, must be unique for one-to-one
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   chargePointAccess ChargePointAccess[]
   permissions       Permission[]
-
-  @@map("users")
 }
 
 model Permission {
@@ -233,11 +243,12 @@ model IdTag {
   idTag       String      @unique
   parentIdTag String?
   status      IdTagStatus @default(ACCEPTED)
-  expiryDate  DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
 
-  @@map("id_tags")
+  user         User? // back-relation only, do NOT define fields/references here
+  expiryDate   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
 }
 
 enum ConnectorType {
