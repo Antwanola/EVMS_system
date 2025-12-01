@@ -1,5 +1,6 @@
 // Helper function to convert OCPP status to internal status
 import { ChargePointStatus } from '@/types/ocpp_types';
+import crypto from "crypto"
 export const convertOCPPStatusToInternal = (ocppStatus: string): ChargePointStatus => {
   const statusMap: Record<string, ChargePointStatus> = {
     'Available': 'AVAILABLE',
@@ -30,3 +31,9 @@ export const convertInternalStatusToOCPP = (internalStatus: ChargePointStatus): 
   };
   return statusMap[internalStatus] || 'Unavailable';
 };
+
+
+export  const generateHashedCode = (input: string): string => {
+    return crypto.createHash('sha256').update(input).digest('hex').slice(0, 6).toUpperCase();
+  }
+

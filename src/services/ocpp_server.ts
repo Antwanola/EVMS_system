@@ -16,6 +16,8 @@ import {
   ConnectorNumResponse
 } from '../types/ocpp_types';
 import { APIGateway } from './api_gateway';
+import { ChargePointStatus } from '../types/ocpp_types';
+
 
 
 export class OCPPServer {
@@ -699,11 +701,11 @@ export class OCPPServer {
     }
   }
 
-  private handleDisconnection(chargePointId: string): void {
-    this.connections.delete(chargePointId);
-    this.chargePointManager.unregisterChargePoint(chargePointId);
-    this.logger.info(`Charge point ${chargePointId} disconnected`);
-  }
+  // private handleDisconnection(chargePointId: string): void {
+  //   this.connections.delete(chargePointId);
+  //   this.chargePointManager.unregisterChargePoint(chargePointId);
+  //   this.logger.info(`Charge point ${chargePointId} disconnected`);
+  // }
 
   private handleError(chargePointId: string, error: Error): void {
     this.logger.error(`WebSocket error for ${chargePointId}:`, error);
@@ -859,5 +861,44 @@ export class OCPPServer {
       data.set(id, connectors);
     });
     return data;
+  }
+
+
+  private async handleDisconnection(chargePointId: string): Promise<void> {
+    const connection = this.connections.get(chargePointId);
+    
+    if (connection) {
+      // Set all connectors to offline in database
+      try {
+        const connectorIds = Array.from(connection.connectors.keys());
+        for (const connectorId of connectorIds) {
+          await this.db.updateConnectorStatus(
+            chargePointId,
+            connectorId,
+            "UNAVAILABLE"
+            
+          );
+          this.logger.debug(`Set connector ${connectorId} to OFFLINE for ${chargePointId}`);
+        }
+        this.logger.info(`All connectors set to OFFLINE for ${chargePointId}`);
+      } catch (error) {
+        this.logger.error(`Failed to set connectors offline for ${chargePointId}:`, error);
+      }
+      
+      // Update Redis to mark as offline
+      try {
+        await this.redis.setJSON(
+          `chargepoint:${chargePointId}:status`,
+          { status: 'unavailable', disconnectedAt: new Date() },
+          3600
+        );
+      } catch (error) {
+        this.logger.error(`Failed to update Redis status for ${chargePointId}:`, error);
+      }
+    }
+    
+    this.connections.delete(chargePointId);
+    this.chargePointManager.unregisterChargePoint(chargePointId);
+    this.logger.info(`Charge point ${chargePointId} disconnected`);
   }
 }

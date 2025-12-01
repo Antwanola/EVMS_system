@@ -4,7 +4,7 @@ import type { User, Permission, ChargePointAccess, IdTag } from '@prisma/client'
 
 // Full user with relations
 export type UserWithRelations = User & {
-  idTag: IdTag | null; // one-to-one
+  idTag?: IdTag | null; // one-to-one
   permissions: Permission[];
   chargePointAccess: ChargePointAccess[];
 };
@@ -24,7 +24,7 @@ export type UserSecureWithRelations = {
   phone: string | null;
   createdAt: Date;
   updatedAt: Date;
-  idTag: IdTag | null;               // one-to-one
+  idTag?: IdTag | null;               // one-to-one
   permissions: Permission[];
   chargePointAccess: ChargePointAccess[];
 };

@@ -291,6 +291,7 @@ export class OCPPMessageHandler {
     connection: ChargePointConnection
   ) {
     for (const meterValue of payload.meterValue) {
+      console.log("meterValues", meterValue)
       const sampledValues = meterValue.sampledValue.map((sv) => ({
         value: sv.value,
         context: sv.context,
@@ -323,13 +324,7 @@ export class OCPPMessageHandler {
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
     console.log("The start config", { StartTransaction: payload });
 
-    const connectorId = payload.connectorId || 1;
-
-    // Ensure connector exists
-    if (!connection.connectors.has(connectorId)) {
-      connection.connectors.set(connectorId, this.getDefaultChargingData(chargePointId, connectorId));
-    }
-
+    const connectorId = payload.connectorId
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
     // if (idTagValidation.status !== "ACCEPTED") {
@@ -342,11 +337,11 @@ export class OCPPMessageHandler {
     //   };
     // }
 
-    const transactionId = 100000 + crypto.randomInt(0, 900000);
-    console.log({ transactionId });
+    // const transactionId = 100000 + crypto.randomInt(0, 900000);
+    // console.log({ transactionId });
 
     const transaction = await this.db.createTransaction({
-      transactionId,
+      transactionId: payload.transactionId,
       chargePointId,
       connectorId: payload.connectorId,
       idTag: payload.idTag,
@@ -359,7 +354,7 @@ export class OCPPMessageHandler {
       chargePointId,
       payload.connectorId,
       payload,
-      transactionId
+      payload.transactionId
     );
 
     // Update connector data
@@ -370,7 +365,7 @@ export class OCPPMessageHandler {
     connection.connectors.set(connectorId, connectorData);
 
     return {
-      transactionId,
+      transactionId:payload.transactionId,
       idTagInfo: {
         status: "Accepted",
         expiryDate: idTagValidation.expiryDate?.toISOString(),
