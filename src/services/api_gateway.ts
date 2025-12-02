@@ -675,8 +675,6 @@ public sendMeterValueToClients = (data: any): void => {
         if (!tagData || tagData.status !== "ACCEPTED") { // CORRECTED: Simplified status check
             throw new Error("Operator tag is not valid or accepted.");
         }
-       
-
       
 
       // const { idTag, connectorId } = req.body;
