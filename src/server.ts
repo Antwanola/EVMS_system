@@ -80,8 +80,8 @@ private setupMiddleware(): void {
     this.setupMiddleware();
     this.setupRoutes();
     
-    this.ocppServer.initialize();
-    await InitialSeed()
+    // this.ocppServer.initialize();
+    // await InitialSeed()
 
     // Graceful shutdown
     process.on('SIGTERM', this.shutdown.bind(this));
