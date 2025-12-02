@@ -667,6 +667,7 @@ public sendMeterValueToClients = (data: any): void => {
       }
       
       const operatorIdTag = req.user?.idTag?.idTag;
+      console.log(operatorIdTag)
       if(!operatorIdTag){
         throw new Error("no idTag detected for operator")
       }
@@ -686,9 +687,9 @@ public sendMeterValueToClients = (data: any): void => {
       });
 
       this.sendSuccessResponse(res, result);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Error starting remote transaction:', error);
-      return this.sendErrorResponse(res, 500, 'Failed to start remote transaction');
+      return this.sendErrorResponse(res, 500, error.message||'Failed to start remote transaction');
     }
   }
 
