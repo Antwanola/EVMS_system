@@ -871,6 +871,7 @@ export class OCPPServer {
       // Set all connectors to offline in database
       try {
         const connectorIds = Array.from(connection.connectors.keys());
+        console.log("connectorid", connection)
         for (const connectorId of connectorIds) {
           await this.db.updateConnectorStatus(
             chargePointId,

@@ -173,6 +173,7 @@ export class OCPPMessageHandler {
             {},
           ];
       }
+      console.log("result sent to mac", [MessageType.CALLRESULT, uniqueId, response])
 
       return [MessageType.CALLRESULT, uniqueId, response];
     } catch (error) {
@@ -323,19 +324,20 @@ export class OCPPMessageHandler {
   ): Promise<StartTransactionResponse> {
     this.logger.info(`Start transaction from ${chargePointId}:`, payload);
     console.log("The start config", { StartTransaction: payload });
+    let accepted;
 
     const connectorId = payload.connectorId
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
-    // if (idTagValidation.status !== "ACCEPTED") {
-    //   return {
-    //     transactionId: -1,
-    //     idTagInfo: {
-    //       status: idTagValidation.status as any,
-    //       expiryDate: idTagValidation.expiryDate?.toISOString(),
-    //     },
-    //   };
-    // }
+    if (idTagValidation.status !== "ACCEPTED") {
+      return {
+        transactionId: -1,
+        idTagInfo: {
+          status: idTagValidation.status as any,
+          expiryDate: idTagValidation.expiryDate?.toISOString(),
+        },
+      };
+    }
 
     // const transactionId = 100000 + crypto.randomInt(0, 900000);
     // console.log({ transactionId });
