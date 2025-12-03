@@ -24,6 +24,7 @@ import {
 } from "../types/ocpp_types";
 import { APIGateway } from "../services/api_gateway";
 import crypto from "crypto"
+import { idTagStatus } from "../helpers/helper";
 
 interface PendingCall {
   resolve: (value: any) => void;
@@ -460,7 +461,7 @@ export class OCPPMessageHandler {
 
     return {
       idTagInfo: {
-        status: idTagValidation.status as any,
+        status: idTagStatus(idTagValidation.status as any),
         expiryDate: idTagValidation.expiryDate?.toISOString(),
       },
     };

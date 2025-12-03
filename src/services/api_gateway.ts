@@ -13,7 +13,7 @@ import { APIResponse, APIUser, ChargingStationData } from '../types/ocpp_types';
 import { TransactionQueryParams } from '../types/TnxQueryType';
 import crypto from 'crypto';
 import { UserStrutcture } from '../types/apiHelperypes';
-import { generateHashedCode } from '../helpers/helper';
+import { generateHashedCode, idTagStatus } from '../helpers/helper';
 
 
 interface AuthenticatedRequest extends Request {
@@ -245,7 +245,7 @@ export class APIGateway {
       const data = {
          idTag: idTag,
       parentIdTag: undefined,
-      status: IdTagStatus.ACCEPTED,
+      status: (IdTagStatus.ACCEPTED),
       expiryDate: undefined
       }
       const createTag = await this.db.createIdTag(data)
