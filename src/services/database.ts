@@ -224,7 +224,7 @@ export class DatabaseService {
 
     const transactionCreationData: Prisma.TransactionCreateInput = {
       transactionId: data.transactionId,
-      chargePoint: { connect: { id: data.chargePointId } }, // Assuming relation setup
+      chargePoint: { connect: { id: data.chargePointId } }, 
       connector: {
         connect: {
           chargePointId_connectorId: {
