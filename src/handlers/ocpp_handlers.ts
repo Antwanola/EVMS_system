@@ -340,11 +340,11 @@ export class OCPPMessageHandler {
       };
     }
 
-    // const transactionId = 100000 + crypto.randomInt(0, 900000);
-    // console.log({ transactionId });
+    const transactionId = 100000 + crypto.randomInt(0, 900000);
+    console.log({ transactionId });
 
     const transaction = await this.db.createTransaction({
-      transactionId: payload.transactionId,
+      transactionId: transactionId,
       chargePointId,
       connectorId: payload.connectorId,
       idTag: payload.idTag,
@@ -357,7 +357,7 @@ export class OCPPMessageHandler {
       chargePointId,
       payload.connectorId,
       payload,
-      payload.transactionId
+      transactionId
     );
 
     // Update connector data
@@ -368,7 +368,7 @@ export class OCPPMessageHandler {
     connection.connectors.set(connectorId, connectorData);
 
     return {
-      transactionId:payload.transactionId,
+      transactionId:transactionId,
       idTagInfo: {
         status: "Accepted",
         expiryDate: idTagValidation.expiryDate?.toISOString(),
