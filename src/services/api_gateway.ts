@@ -698,10 +698,12 @@ public sendMeterValueToClients = (data: any): void => {
         
       }
 
-      const { id } = req.params;
-      const { transactionId } = req.body;
+      const { chargePointId, transactionId } = req.params;
+      if(!chargePointId && transactionId) {
+        return this.sendErrorResponse(res, 404, "no chargepoint ID or TXN ID specified")
+      }
 
-      const result = await this.ocppServer.sendMessage(id, 'RemoteStopTransaction', {
+      const result = await this.ocppServer.sendMessage(chargePointId, 'RemoteStopTransaction', {
         transactionId,
       });
 
@@ -719,10 +721,10 @@ public sendMeterValueToClients = (data: any): void => {
         return;
       }
 
-      const { id } = req.params;
+      const { chargePointId } = req.params;
       const { type = 'Soft' } = req.body;
 
-      const result = await this.ocppServer.sendMessage(id, 'Reset', { type });
+      const result = await this.ocppServer.sendMessage(chargePointId, 'Reset', { type });
       return this.sendSuccessResponse(res, result);
     } catch (error) {
       this.logger.error('Error resetting charge point:', error);
@@ -737,10 +739,10 @@ public sendMeterValueToClients = (data: any): void => {
         
       }
 
-      const { id } = req.params;
+      const { chargePointId } = req.params;
       const { connectorId } = req.body;
 
-      const result = await this.ocppServer.sendMessage(id, 'UnlockConnector', { connectorId });
+      const result = await this.ocppServer.sendMessage(chargePointId, 'UnlockConnector', { connectorId });
       return this.sendSuccessResponse(res, result);
     } catch (error) {
       this.logger.error('Error unlocking connector:', error);
