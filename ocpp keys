@@ -75,7 +75,7 @@
             {
                 "key": "MeterValuesAlignedData",
                 "readonly": false,
-                "value": "Current.Import,Energy.Active.Import.Register,Power.Active.Import,SoC,Voltage"
+                "value": "Current.Import,Energy.Active.Import.Register,Power.Active.Import,SoC,Voltage,Temperature"
             },
             {
                 "key": "MeterValuesAlignedDataMaxLength",
