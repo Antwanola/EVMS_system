@@ -35,9 +35,6 @@ interface PendingCall {
 export class OCPPMessageHandler {
   private readonly logger = Logger.getInstance();
   private readonly pendingCalls = new Map<string, PendingCall>();
-  private activeTransactionRequests = new Map<string, Promise<StartTransactionResponse>>();
-  private activeStopRequests = new Map<string, Promise<StopTransactionResponse>>();
-
 
   constructor(
     private readonly db: DatabaseService,
@@ -378,51 +375,30 @@ export class OCPPMessageHandler {
   //   };
   // }
 
+
   private async handleStartTransaction(
-  chargePointId: string,
-  payload: StartTransactionRequest,
-  connection: ChargePointConnection
-): Promise<StartTransactionResponse> {
-  // Create a unique key for this request
-  const requestKey = `${chargePointId}-${payload.connectorId}-${payload.timestamp}`;
+    chargePointId: string,
+    payload: StartTransactionRequest,
+    connection: ChargePointConnection
+  ): Promise<StartTransactionResponse> {
+    this.logger.info(`Start transaction from ${chargePointId}:`, payload);
+    console.log("The start config", { StartTransaction: payload });
 
-  // If this request is already being processed, return the existing promise
-  if (this.activeTransactionRequests.has(requestKey)) {
-    this.logger.warn(`Duplicate StartTransaction request detected: ${requestKey}`);
-    return this.activeTransactionRequests.get(requestKey)!;
-  }
-
-  // Create and store the promise
-  const promise = this._startTransaction(chargePointId, payload, connection)
-    .finally(() => {
-      // Clean up after completion
-      this.activeTransactionRequests.delete(requestKey);
-    });
-
-  this.activeTransactionRequests.set(requestKey, promise);
-  return promise;
-}
-
-private async _startTransaction(
-  chargePointId: string,
-  payload: StartTransactionRequest,
-  connection: ChargePointConnection
-): Promise<StartTransactionResponse> {
-  this.logger.info(`Start transaction from ${chargePointId}:`, payload);
-
-  try {
+    const connectorId = payload.connectorId;
     const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
     if (idTagValidation.status !== "ACCEPTED") {
       return {
         transactionId: -1,
         idTagInfo: {
-          status: idTagStatus(idTagValidation.status as any),
+          status: idTagValidation.status as any,
+          expiryDate: idTagValidation.expiryDate?.toISOString(),
         },
       };
     }
 
-    const transactionId = parseInt( crypto.randomUUID().replace(/-/g, '').slice(0, 12), 16)
+    const transactionId = 100000 + crypto.randomInt(0, 900000);
+    console.log({ transactionId });
 
     const transaction = await this.db.createTransaction({
       transactionId: transactionId,
@@ -433,6 +409,7 @@ private async _startTransaction(
       startTimestamp: new Date(payload.timestamp),
       reservationId: payload.reservationId,
     });
+    console.log({ transaction });
 
     await this.db.createOrUpdateConnector(
       chargePointId,
@@ -441,147 +418,41 @@ private async _startTransaction(
       transaction.id
     );
 
-    // Update connector state
-    const connectorData = connection.connectors.get(payload.connectorId);
-    if (connectorData) {
-      connectorData.status = "Charging" as any
-      connectorData.connected = true;
-      connectorData.timestamp = new Date();
-      connection.connectors.set(payload.connectorId, connectorData);
-    }
-
-    this.logger.info(`Transaction started: ${transaction.transactionId}`);
+    // Update connector data
+    const connectorData = connection.connectors.get(connectorId)!;
+    connectorData.status = "Charging" as any;
+    connectorData.connected = true;
+    connectorData.timestamp = new Date();
+    connection.connectors.set(connectorId, connectorData);
 
     return {
-      transactionId: transaction.transactionId,
+      transactionId: transaction.transactionId,  // ✅ Return DB ID, not random number
       idTagInfo: {
         status: "Accepted",
+        // expiryDate: idTagValidation.expiryDate?.toISOString(),
       },
     };
-  } catch (error) {
-    this.logger.error(`Failed to start transaction for ${chargePointId}:`, error);
-    throw error;
   }
-}
-
- 
-
-  // private async handleStopTransaction(
-  //   chargePointId: string,
-  //   payload: StopTransactionRequest,
-  //   connection: ChargePointConnection
-  // ): Promise<StopTransactionResponse> {
-  //   this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
-
-  //   const transaction = await this.db.getTransaction(payload.transactionId);
-  //   console.log({ StopTransaction: payload, transaction });
-
-  //   if (!transaction) {
-  //     return {
-  //       idTagInfo: {
-  //         status: "Invalid",
-  //       },
-  //     };
-  //   }
-
-  //   const connectorId = transaction.connectorId || 1;
-
-  //   await this.db.stopTransaction(
-  //     payload.transactionId,
-  //     payload.meterStop,
-  //     new Date(payload.timestamp),
-  //     payload.reason
-  //   );
-
-  //   await this.db.updateConnectorStatus(
-  //     chargePointId,
-  //     transaction.connectorId,
-  //     "AVAILABLE"
-  //   );
-
-  //   // Update connector data
-  //   if (connection.connectors.has(connectorId)) {
-  //     const connectorData = connection.connectors.get(connectorId)!;
-  //     connectorData.status = "Available" as any;
-  //     connectorData.connected = false;
-  //     connectorData.stopReason = payload.reason || null;
-  //     connectorData.chargingEnergy = payload.meterStop -  transaction.meterStart;
-  //     connectorData.timestamp = new Date();
-  //     connection.connectors.set(connectorId, connectorData);
-  //   }
-
-  //   // Process transaction data if provided
-  //   if (payload.transactionData) {
-  //     for (const meterValue of payload.transactionData) {
-  //       const sampledValues = meterValue.sampledValue.map((sv) => ({
-  //         value: sv.value,
-  //         context: sv.context,
-  //         format: sv.format,
-  //         measurand: sv.measurand,
-  //         phase: sv.phase,
-  //         location: sv.location,
-  //         unit: sv.unit,
-  //       }));
-
-  //       await this.db.saveMeterValues({
-  //         transactionId: payload.transactionId,
-  //         connectorId: transaction.connectorId,
-  //         chargePointId,
-  //         timestamp: new Date(meterValue.timestamp),
-  //         sampledValues,
-  //       });
-  //     }
-  //   }
-
-  //   return {
-  //     idTagInfo: {
-  //       status: "Accepted",
-  //     },
-  //   };
-  // }
-
-
 
   private async handleStopTransaction(
-  chargePointId: string,
-  payload: StopTransactionRequest,
-  connection: ChargePointConnection
-): Promise<StopTransactionResponse> {
-  // Deduplicate based on chargePointId and transactionId
-  const requestKey = `${chargePointId}-${payload.transactionId}`;
+    chargePointId: string,
+    payload: StopTransactionRequest,
+    connection: ChargePointConnection
+  ): Promise<StopTransactionResponse> {
+    this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
 
-  if (this.activeStopRequests.has(requestKey)) {
-    this.logger.warn(`Duplicate StopTransaction request detected: ${requestKey}`);
-    return this.activeStopRequests.get(requestKey)!;
-  }
-
-  const promise = this._stopTransaction(chargePointId, payload, connection)
-    .finally(() => {
-      this.activeStopRequests.delete(requestKey);
-    });
-
-  this.activeStopRequests.set(requestKey, promise);
-  return promise;
-}
-
-private async _stopTransaction(
-  chargePointId: string,
-  payload: StopTransactionRequest,
-  connection: ChargePointConnection
-): Promise<StopTransactionResponse> {
-  this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
-
-  try {
     const transaction = await this.db.getTransaction(payload.transactionId);
+    console.log({ StopTransaction: payload, transaction });
 
     if (!transaction) {
-      this.logger.warn(`Transaction not found: ${payload.transactionId}`);
       return {
         idTagInfo: {
           status: "Invalid",
         },
       };
     }
+
+    const connectorId = transaction.connectorId || 1;
 
     await this.db.stopTransaction(
       payload.transactionId,
@@ -596,19 +467,19 @@ private async _stopTransaction(
       "AVAILABLE"
     );
 
-    // Update connector state
-    const connectorData = connection.connectors.get(transaction.connectorId);
-    if (connectorData) {
+    // Update connector data
+    if (connection.connectors.has(connectorId)) {
+      const connectorData = connection.connectors.get(connectorId)!;
       connectorData.status = "Available" as any;
       connectorData.connected = false;
       connectorData.stopReason = payload.reason || null;
-      connectorData.chargingEnergy = payload.meterStop - transaction.meterStart;
+      connectorData.chargingEnergy = payload.meterStop -  transaction.meterStart;
       connectorData.timestamp = new Date();
-      connection.connectors.set(transaction.connectorId, connectorData);
+      connection.connectors.set(connectorId, connectorData);
     }
 
     // Process transaction data if provided
-    if (payload.transactionData && payload.transactionData.length > 0) {
+    if (payload.transactionData) {
       for (const meterValue of payload.transactionData) {
         const sampledValues = meterValue.sampledValue.map((sv) => ({
           value: sv.value,
@@ -630,18 +501,12 @@ private async _stopTransaction(
       }
     }
 
-    this.logger.info(`Transaction stopped: ${payload.transactionId}`);
-
     return {
       idTagInfo: {
         status: "Accepted",
       },
     };
-  } catch (error) {
-    this.logger.error(`Failed to stop transaction ${payload.transactionId}:`, error);
-    throw error;
   }
-}
 
   private async handleAuthorize(
     chargePointId: string,
@@ -655,7 +520,7 @@ private async _stopTransaction(
     return {
       idTagInfo: {
         status: idTagStatus(idTagValidation.status as any),
-        // expiryDate: idTagValidation.expiryDate?.toISOString(),
+        expiryDate: idTagValidation.expiryDate?.toISOString(),
       },
     };
   }
