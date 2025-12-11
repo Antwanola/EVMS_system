@@ -290,6 +290,7 @@ export class DatabaseService {
     where: options?.where,
     orderBy: options?.orderBy,
     include: {
+      idTag: true,
       chargePoint: true,
       connector: true,
       meterValues: {

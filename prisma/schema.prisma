@@ -90,6 +90,8 @@ model Transaction {
   reservationId  Int?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+  startSoC       Int?
+  stopSoC        Int?
 
   meterValues MeterValue[]
   connector   Connector    @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
@@ -175,12 +177,26 @@ model User {
   // One-to-one relation
   idTag   IdTag?  @relation(fields: [idTagId], references: [id])
   idTagId String? @unique // foreign key, must be unique for one-to-one
+  
+  vehicles Vehicle[] // Fixed: proper relation name and array
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   chargePointAccess ChargePointAccess[]
   permissions       Permission[]
+}
+
+model Vehicle { // Fixed: singular model name
+  id           String   @id @default(cuid())
+  userId       String
+  licensePlate String   @unique
+  make         String?
+  model        String?
+  color        String?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("vehicles")
 }
 
 model Permission {
@@ -240,7 +256,7 @@ model IdTag {
   parentIdTag String?
   status      IdTagStatus @default(ACCEPTED)
 
-  user         User? // back-relation only, do NOT define fields/references here
+  user         User? // One-to-one back-relation
   expiryDate   DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

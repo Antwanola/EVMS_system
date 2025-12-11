@@ -63,7 +63,6 @@ export class OCPPServer {
     
     const numOfConnector = await this.getConnectorNum();
     const connectors = new Map<number, ChargingStationData>();
-    console.log("chargeID", this.chargePointID)
     
     const connection: ChargePointConnection = {
       id: this.chargePointID,
@@ -209,8 +208,6 @@ export class OCPPServer {
 ): Promise<void> {
   try {
     const [messageTypeId, uniqueId, action, payload] = message;
-
-    console.log("realtime update", payload?.status || action);
 
     switch (action) {
       case 'BootNotification':
@@ -871,7 +868,6 @@ export class OCPPServer {
       // Set all connectors to offline in database
       try {
         const connectorIds = Array.from(connection.connectors.keys());
-        console.log("connectorid", connection)
         for (const connectorId of connectorIds) {
           await this.db.updateConnectorStatus(
             chargePointId,
