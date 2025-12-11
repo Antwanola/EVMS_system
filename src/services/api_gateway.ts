@@ -83,8 +83,8 @@ export class APIGateway {
     this.router.get('/transactions/active', this.authenticateUser.bind(this), this.getActiveTransactions.bind(this));
 
     // Control routes (requires higher permissions)
-    this.router.post('/charge-points/:chargePointId/remote-start/:connectorId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStartTransaction.bind(this));
-    this.router.post('/charge-points/:id/remote-stop', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStopTransaction.bind(this));
+    this.router.post('/charge-points/remote-start/:chargePointId/:connectorId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStartTransaction.bind(this));
+    this.router.post('/charge-points/remote-stop/:chargepointId/:transactionId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStopTransaction.bind(this));
     this.router.post('/charge-points/:id/reset', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.resetChargePoint.bind(this));
     this.router.post('/charge-points/:id/unlock', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.unlockConnector.bind(this));
 
@@ -667,7 +667,6 @@ public sendMeterValueToClients = (data: any): void => {
       }
       
       const operatorIdTag = req.user?.idTag?.idTag;
-      console.log(operatorIdTag)
       if(!operatorIdTag){
         throw new Error("no idTag detected for operator")
       }
@@ -692,25 +691,43 @@ public sendMeterValueToClients = (data: any): void => {
   }
 
   private async remoteStopTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
+     try {
       if (!this.ocppServer) {
         return this.sendErrorResponse(res, 503, 'OCPP Server not initialized');
         
       }
 
-      const { chargePointId, transactionId } = req.params;
-      if(!chargePointId && transactionId) {
-        return this.sendErrorResponse(res, 404, "no chargepoint ID or TXN ID specified")
+      const { chargePointId } = req.params;
+      if (!chargePointId) {
+         return this.sendErrorResponse(res, 404, "no chargepoint ID specified")
+         
       }
+      const { transactionId } = req.params;
+      if(!transactionId) {
+        return this.sendErrorResponse(res, 404, "no connector specified")
+        
+      }
+      
+  //     const operatorIdTag = req.user?.idTag?.idTag;
+  //     if(!operatorIdTag){
+  //       throw new Error("no idTag detected for operator")
+  //     }
+  //  const tagData = await this.db.getIdTag(operatorIdTag);
+  //       if (!tagData || tagData.status !== "ACCEPTED") { // CORRECTED: Simplified status check
+  //           throw new Error("Operator tag is not valid or accepted.");
+  //       }
+      
+
+      // const { idTag, connectorId } = req.body;
 
       const result = await this.ocppServer.sendMessage(chargePointId, 'RemoteStopTransaction', {
-        transactionId,
+        transactionId: parseInt(transactionId, 10),
       });
 
       this.sendSuccessResponse(res, result);
-    } catch (error) {
-      this.logger.error('Error stopping remote transaction:', error);
-      return this.sendErrorResponse(res, 500, 'Failed to stop remote transaction');
+    } catch (error: any) {
+      this.logger.error('Error starting remote transaction:', error);
+      return this.sendErrorResponse(res, 500, error.message||'Failed to start remote transaction');
     }
   }
 

@@ -196,8 +196,6 @@ export class OCPPMessageHandler {
     payload: BootNotificationRequest,
     connection: ChargePointConnection
   ): Promise<BootNotificationResponse> {
-     console.log("🔍 CSMS: handleBootNotification called for", chargePointId);
-  console.log("🔍 CSMS: payload:", payload);
     this.logger.info(`Boot notification from ${chargePointId}:`, payload);
 
     await this.db.createOrUpdateChargePoint({
@@ -286,36 +284,52 @@ export class OCPPMessageHandler {
     return {};
   }
 
-  private handleMeterValues(
-    chargePointId: string,
-    payload: MeterValuesRequest,
-    connection: ChargePointConnection
-  ) {
-    for (const meterValue of payload.meterValue) {
-      console.log("meterValues", meterValue)
-      const sampledValues = meterValue.sampledValue.map((sv) => ({
-        value: sv.value,
-        context: sv.context,
-        format: sv.format,
-        measurand: sv.measurand,
-        phase: sv.phase,
-        location: sv.location,
-        unit: sv.unit,
-      }));
-      this.apiGateway.sendMeterValueToClients({
-        chargePointId,
-        timestamp: meterValue.timestamp,
-        sampledValues,
-      })
-      // await this.db.saveMeterValues({
-      //   transactionId: payload.transactionId,
-      //   connectorId: payload.connectorId,
-      //   chargePointId,
-      //   timestamp: new Date(meterValue.timestamp),
-      //   sampledValues,
-      // });
-    }
+  private async handleMeterValues(
+  chargePointId: string,
+  payload: MeterValuesRequest,
+  connection: ChargePointConnection
+) {
+  if (!payload?.meterValue || !Array.isArray(payload.meterValue)) {
+    console.warn(`Invalid MeterValues payload from ${chargePointId}`);
+    return {};
   }
+
+  for (const meterValue of payload.meterValue) {
+    const timestamp = meterValue.timestamp ?? new Date().toISOString();
+
+    const sampledValues = (meterValue.sampledValue || []).map((sv) => ({
+      value: sv.value,
+      context: sv.context || "Sample.Periodic",
+      format: sv.format || "Raw",
+      measurand: sv.measurand || "Energy.Active.Import.Register",
+      phase: sv.phase || null,
+      location: sv.location || "Outlet",
+      unit: sv.unit || null,
+    }));
+
+    // ----- 🔌 Send data to WebSocket clients -----
+    this.apiGateway.sendMeterValueToClients({
+      chargePointId,
+      timestamp,
+      connectorId: payload.connectorId,
+      transactionId: payload.transactionId,
+      sampledValues,
+    });
+
+    // ----- 💾 OPTIONAL: Save to database -----
+    // await this.db.saveMeterValues({
+    //   transactionId: payload.transactionId,
+    //   connectorId: payload.connectorId,
+    //   chargePointId,
+    //   timestamp: new Date(timestamp),
+    //   sampledValues,
+    // });
+  }
+
+  // ----- ✅ Return proper OCPP acknowledgment -----
+  return {};
+}
+
 
   // private async handleStartTransaction(
   //   chargePointId: string,
@@ -415,7 +429,7 @@ export class OCPPMessageHandler {
       chargePointId,
       payload.connectorId,
       payload,
-      transaction.id
+      transaction.transactionId
     );
 
     // Update connector data
