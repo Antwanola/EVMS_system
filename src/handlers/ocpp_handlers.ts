@@ -174,7 +174,6 @@ export class OCPPMessageHandler {
             {},
           ];
       }
-      console.log("result sent to mac", [MessageType.CALLRESULT, uniqueId, response])
 
       return [MessageType.CALLRESULT, uniqueId, response];
     } catch (error) {

@@ -124,6 +124,12 @@ export interface StartTransactionRequest {
   reservationId?: number;  // OPTIONAL
 }
 
+ export interface CreatedTransactionResult {
+    id: number;
+    transactionId: number;
+    startTimestamp: Date;
+    // Add other fields you might need in your handler, like chargePointId
+}
 
 export interface StopTransactionRequest {
   transactionId: number;

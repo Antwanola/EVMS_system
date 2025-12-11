@@ -186,7 +186,6 @@ export class OCPPServer {
       
 
       const response = await this.messageHandler.handleMessage(chargePointId, message, connection);
-      console.log(`Response recieved from HandleMessage ${chargePointId}:`, response);
       if (response) {
         connection.ws.send(JSON.stringify(response));
         this.logger.debug(`Sent response to ${chargePointId}:`, response);

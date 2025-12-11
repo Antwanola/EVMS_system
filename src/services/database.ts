@@ -1,7 +1,7 @@
 // src/services/database.ts
 import { PrismaClient, Prisma, ChargePoint, Connector, User, Transaction, IdTag, ConnectorStatus, ChargingData, Alarm } from '@prisma/client';
 import { Logger } from '../Utils/logger';
-import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason } from '../types/ocpp_types';
+import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason, CreatedTransactionResult } from '../types/ocpp_types';
 import { UserSecureWithRelations, UserWithRelations } from '../types/userWithRelations';
 import { schemas } from '../middleware/validation';
 
@@ -203,7 +203,9 @@ export class DatabaseService {
     });
   }
 
-  public async createTransaction(data: {
+
+
+public async createTransaction(data: {
   transactionId: number;
   chargePointId: string;
   connectorId: number;
@@ -211,19 +213,25 @@ export class DatabaseService {
   meterStart: number;
   startTimestamp: Date;
   reservationId?: number;
-}): Promise<Transaction> {
+}): Promise<CreatedTransactionResult> { // <-- Updated return type for clarity
 
   const idTagRecord = await this.prisma.idTag.findUnique({
       where: {
         idTag: data.idTag, // Lookup using the physical tag value
       },
       select: { id: true },
-    });
+  });
 
-    const idTagDbId = idTagRecord?.id;
+  const idTagDbId = idTagRecord?.id;
 
-    const transactionCreationData: Prisma.TransactionCreateInput = {
+  const transactionCreationData: Prisma.TransactionCreateInput = {
+      // 1. Scalar Fields
       transactionId: data.transactionId,
+      meterStart: data.meterStart,
+      startTimestamp: data.startTimestamp,
+      reservationId: data.reservationId,
+      
+      // 2. Relations using connect
       chargePoint: { connect: { id: data.chargePointId } }, 
       connector: {
         connect: {
@@ -233,17 +241,19 @@ export class DatabaseService {
           },
         },
       },
-      meterStart: data.meterStart,
-      startTimestamp: data.startTimestamp,
-      reservationId: data.reservationId,
-      
       // Use the database ID for the relation:
       ...(idTagDbId && { idTag: { connect: { id: idTagDbId } } }),
-    }
+  }
   
- return this.prisma.transaction.create({
+  return this.prisma.transaction.create({
       data: transactionCreationData,
-    });
+      // 🎯 CORRECTION: Use SELECT to explicitly return the OCPP transactionId
+      select: {
+          id: true, // Internal DB Primary Key (often needed later)
+          transactionId: true, // <-- The crucial OCPP ID number for the Connector update
+          startTimestamp: true, // Useful for logs/next steps
+      }
+  });
 }
 
   public async stopTransaction(
