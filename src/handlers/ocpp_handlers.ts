@@ -429,7 +429,7 @@ export class OCPPMessageHandler {
       chargePointId,
       payload.connectorId,
       payload,
-      transaction.id
+      transaction.transactionId
     );
 
     // Update connector data
