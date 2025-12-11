@@ -84,7 +84,7 @@ export class APIGateway {
 
     // Control routes (requires higher permissions)
     this.router.post('/charge-points/remote-start/:chargePointId/:connectorId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStartTransaction.bind(this));
-    this.router.post('/charge-points/remote-stop/:chargepointId/:transactionId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStopTransaction.bind(this));
+    this.router.post('/charge-points/remote-stop/:chargePointId/:transactionId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStopTransaction.bind(this));
     this.router.post('/charge-points/:id/reset', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.resetChargePoint.bind(this));
     this.router.post('/charge-points/:id/unlock', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.unlockConnector.bind(this));
 
@@ -698,6 +698,7 @@ public sendMeterValueToClients = (data: any): void => {
       }
 
       const { chargePointId } = req.params;
+      console.log('chargePointId', chargePointId);
       if (!chargePointId) {
          return this.sendErrorResponse(res, 404, "no chargepoint ID specified")
          
@@ -719,6 +720,7 @@ public sendMeterValueToClients = (data: any): void => {
       
 
       // const { idTag, connectorId } = req.body;
+      console.log('ChargePointId', chargePointId, 'TransactionId', transactionId);
 
       const result = await this.ocppServer.sendMessage(chargePointId, 'RemoteStopTransaction', {
         transactionId: parseInt(transactionId, 10),
