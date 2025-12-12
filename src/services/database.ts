@@ -262,7 +262,7 @@ public async createTransaction(data: {
     stopTimestamp: Date,
     stopReason?: StopReason
   ): Promise<Transaction> {
-    return this.prisma.transaction.update({
+    return await this.prisma.transaction.update({
       where: { transactionId },
       data: {
         meterStop,
@@ -413,6 +413,48 @@ public async getTransactionsCount(where?: any): Promise<number> {
       },
     });
   }
+
+public async setMeterValuesUnderTXN(
+  transactionPrimaryKeyId: number,
+  meterValues: {
+    timestamp: Date;
+    connectorId: number;
+    chargePointId: string;
+    sampledValues: {
+      value: string;
+      context?: string | null;
+      format?: string | null;
+      measurand?: string | null;
+      phase?: string | null;
+      location?: string | null;
+      unit?: string | null;
+    }[];
+  }[]
+): Promise<void> {
+  await this.prisma.transaction.update({
+    where: { id: transactionPrimaryKeyId }, // IMPORTANT: use Transaction.id (PK)
+    data: {
+      meterValues: {
+        create: meterValues.map((mv) => ({
+          timestamp: mv.timestamp,
+          connectorId: mv.connectorId,
+          chargePointId: mv.chargePointId,
+          sampledValues: {
+            create: mv.sampledValues.map((sv) => ({
+              value: sv.value,
+              context: sv.context ?? null,
+              format: sv.format ?? null,
+              measurand: sv.measurand ?? null,
+              phase: sv.phase ?? null,
+              location: sv.location ?? null,
+              unit: sv.unit ?? null,
+            })),
+          },
+        })),
+      },
+    },
+  });
+}
 
   // User Management
 public async createUser(data: {
