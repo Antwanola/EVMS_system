@@ -40,7 +40,7 @@ export class OCPPMessageHandler {
     private readonly db: DatabaseService,
     private readonly redis: RedisService,
     private readonly apiGateway: APIGateway
-  ) {}
+  ) { }
 
   // ==================== MESSAGE ROUTING ====================
 
@@ -137,7 +137,9 @@ export class OCPPMessageHandler {
 
       switch (action) {
         case "BootNotification":
+          console.log('🥾 Processing BootNotification...', payload);
           response = await this.handleBootNotification(chargePointId, payload, connection);
+          console.log('🥾 BootNotification response:', response);
           break;
 
         case "Heartbeat":
@@ -284,50 +286,50 @@ export class OCPPMessageHandler {
   }
 
   private async handleMeterValues(
-  chargePointId: string,
-  payload: MeterValuesRequest,
-  connection: ChargePointConnection
-) {
-  if (!payload?.meterValue || !Array.isArray(payload.meterValue)) {
-    console.warn(`Invalid MeterValues payload from ${chargePointId}`);
+    chargePointId: string,
+    payload: MeterValuesRequest,
+    connection: ChargePointConnection
+  ) {
+    if (!payload?.meterValue || !Array.isArray(payload.meterValue)) {
+      console.warn(`Invalid MeterValues payload from ${chargePointId}`);
+      return {};
+    }
+
+    for (const meterValue of payload.meterValue) {
+      const timestamp = meterValue.timestamp ?? new Date().toISOString();
+
+      const sampledValues = (meterValue.sampledValue || []).map((sv) => ({
+        value: sv.value,
+        context: sv.context || "Sample.Periodic",
+        format: sv.format || "Raw",
+        measurand: sv.measurand || "Energy.Active.Import.Register",
+        phase: sv.phase || null,
+        location: sv.location || "Outlet",
+        unit: sv.unit || null,
+      }));
+      console.log("metervalues",sampledValues);
+      // ----- 🔌 Send data to WebSocket clients -----
+      this.apiGateway.sendMeterValueToClients({
+        chargePointId,
+        timestamp,
+        connectorId: payload.connectorId,
+        transactionId: payload.transactionId,
+        sampledValues,
+      });
+
+      // ----- 💾 OPTIONAL: Save to database -----
+      // await this.db.saveMeterValues({
+      //   transactionId: payload.transactionId,
+      //   connectorId: payload.connectorId,
+      //   chargePointId,
+      //   timestamp: new Date(timestamp),
+      //   sampledValues,
+      // });
+    }
+
+    // ----- ✅ Return proper OCPP acknowledgment -----
     return {};
   }
-
-  for (const meterValue of payload.meterValue) {
-    const timestamp = meterValue.timestamp ?? new Date().toISOString();
-
-    const sampledValues = (meterValue.sampledValue || []).map((sv) => ({
-      value: sv.value,
-      context: sv.context || "Sample.Periodic",
-      format: sv.format || "Raw",
-      measurand: sv.measurand || "Energy.Active.Import.Register",
-      phase: sv.phase || null,
-      location: sv.location || "Outlet",
-      unit: sv.unit || null,
-    }));
-
-    // ----- 🔌 Send data to WebSocket clients -----
-    this.apiGateway.sendMeterValueToClients({
-      chargePointId,
-      timestamp,
-      connectorId: payload.connectorId,
-      transactionId: payload.transactionId,
-      sampledValues,
-    });
-
-    // ----- 💾 OPTIONAL: Save to database -----
-    // await this.db.saveMeterValues({
-    //   transactionId: payload.transactionId,
-    //   connectorId: payload.connectorId,
-    //   chargePointId,
-    //   timestamp: new Date(timestamp),
-    //   sampledValues,
-    // });
-  }
-
-  // ----- ✅ Return proper OCPP acknowledgment -----
-  return {};
-}
 
 
   // private async handleStartTransaction(
@@ -447,79 +449,93 @@ export class OCPPMessageHandler {
     };
   }
 
-  private async handleStopTransaction(
-    chargePointId: string,
-    payload: StopTransactionRequest,
-    connection: ChargePointConnection
-  ): Promise<StopTransactionResponse> {
-    this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
 
-    const transaction = await this.db.getTransaction(payload.transactionId);
-    console.log({ StopTransaction: payload, transaction });
+private async handleStopTransaction(
+  chargePointId: string,
+  payload: StopTransactionRequest,
+  connection: ChargePointConnection
+): Promise<StopTransactionResponse> {
+  this.logger.info(`Stop transaction from ${chargePointId}:`, payload);
 
-    if (!transaction) {
-      return {
-        idTagInfo: {
-          status: "Invalid",
-        },
-      };
-    }
+  // Get transaction using OCPP transactionId
+  const transaction = await this.db.getTransaction(payload.transactionId);
+  console.log({ StopTransaction: payload, transaction });
 
-    const connectorId = transaction.connectorId || 1;
-
-    await this.db.stopTransaction(
-      payload.transactionId,
-      payload.meterStop,
-      new Date(payload.timestamp),
-      payload.reason
+  // If transaction not found → still respond Accepted
+  if (!transaction) {
+    this.logger.warn(
+      `StopTransaction ${payload.transactionId} received but no active transaction found for CP ${chargePointId}`
     );
-
-    await this.db.updateConnectorStatus(
-      chargePointId,
-      transaction.connectorId,
-      "AVAILABLE"
-    );
-
-    // Update connector data
-    if (connection.connectors.has(connectorId)) {
-      const connectorData = connection.connectors.get(connectorId)!;
-      connectorData.status = "Available" as any;
-      connectorData.connected = false;
-      connectorData.stopReason = payload.reason || null;
-      connectorData.chargingEnergy = payload.meterStop -  transaction.meterStart;
-      connectorData.timestamp = new Date();
-      connection.connectors.set(connectorId, connectorData);
-    }
-
-    // Process transaction data if provided
-    if (payload.transactionData) {
-      for (const meterValue of payload.transactionData) {
-        const sampledValues = meterValue.sampledValue.map((sv) => ({
-          value: sv.value,
-          context: sv.context,
-          format: sv.format,
-          measurand: sv.measurand,
-          phase: sv.phase,
-          location: sv.location,
-          unit: sv.unit,
-        }));
-
-        await this.db.saveMeterValues({
-          transactionId: payload.transactionId,
-          connectorId: transaction.connectorId,
-          chargePointId,
-          timestamp: new Date(meterValue.timestamp),
-          sampledValues,
-        });
-      }
-    }
 
     return {
-      idTagInfo: {
-        status: "Accepted",
-      },
+      idTagInfo: { status: "Accepted" }
     };
   }
+
+  const connectorId = transaction.connectorId ?? 1;
+  const transactionPrimaryKey = transaction.id; // IMPORTANT: Prisma PK
+
+  // Update the transaction record
+  const updateTXN = await this.db.stopTransaction(
+    transaction.transactionId,
+    payload.meterStop,
+    new Date(payload.timestamp),
+    payload.reason
+  );
+
+  console.log({ updateTXN });
+
+  // Update connector state
+  await this.db.updateConnectorStatus(
+    chargePointId,
+    connectorId,
+    "AVAILABLE"
+  );
+
+  if (connection.connectors.has(connectorId)) {
+    const conn = connection.connectors.get(connectorId)!;
+    conn.status = "Available" as any;
+    conn.connected = false;
+    conn.stopReason = payload.reason ?? null;
+    conn.chargingEnergy = payload.meterStop - transaction.meterStart;
+    conn.timestamp = new Date();
+    connection.connectors.set(connectorId, conn);
+  }
+
+  // Process transactionData → MeterValues + SampledValues
+  if (payload.transactionData?.length) {
+    const valuesToInsert = payload.transactionData.map((mv) => ({
+      timestamp: new Date(mv.timestamp),
+      connectorId: transaction.connectorId,
+      chargePointId,
+      sampledValues: mv.sampledValue.map((sv) => ({
+        value: sv.value,
+        context: sv.context ?? null,
+        format: sv.format ?? null,
+        measurand: sv.measurand ?? null,
+        phase: sv.phase ?? null,
+        location: sv.location ?? null,
+        unit: sv.unit ?? null,
+      }))
+    }));
+
+    // Save using your new Prisma helper method
+    await this.db.setMeterValuesUnderTXN(
+      transactionPrimaryKey,
+      valuesToInsert
+    );
+  }
+
+  return {
+    idTagInfo: {
+      status: "Accepted"
+    }
+  };
+}
+
+
+
+
 
   private async handleAuthorize(
     chargePointId: string,
@@ -533,7 +549,7 @@ export class OCPPMessageHandler {
     return {
       idTagInfo: {
         status: idTagStatus(idTagValidation.status as any),
-        expiryDate: idTagValidation.expiryDate?.toISOString(),
+        // expiryDate: idTagValidation.expiryDate?.toISOString(),
       },
     };
   }
