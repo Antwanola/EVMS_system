@@ -315,52 +315,85 @@ export class OCPPMessageHandler {
     return {};
   }
 
-  private async handleMeterValues(
-    chargePointId: string,
-    payload: MeterValuesRequest,
-    connection: ChargePointConnection
+ private async handleMeterValues(
+  chargePointId: string,
+  payload: MeterValuesRequest,
+  connection: ChargePointConnection
+) {
+  if (
+    !payload?.meterValue ||
+    !Array.isArray(payload.meterValue) ||
+    !payload.transactionId ||
+    !payload.connectorId
   ) {
-    if (!payload?.meterValue || !Array.isArray(payload.meterValue)) {
-      console.warn(`Invalid MeterValues payload from ${chargePointId}`);
-      return {};
-    }
-
-    for (const meterValue of payload.meterValue) {
-      const timestamp = meterValue.timestamp ?? new Date().toISOString();
-
-      const sampledValues = (meterValue.sampledValue || []).map((sv) => ({
-        value: sv.value,
-        context: sv.context || "Sample.Periodic",
-        format: sv.format || "Raw",
-        measurand: sv.measurand || "Energy.Active.Import.Register",
-        phase: sv.phase || null,
-        location: sv.location || "Outlet",
-        unit: sv.unit || null,
-      }));
-      console.log("metervalues",sampledValues);
-      // ----- 🔌 Send data to WebSocket clients -----
-      this.apiGateway.sendMeterValueToClients({
-        chargePointId,
-        timestamp,
-        connectorId: payload.connectorId,
-        transactionId: payload.transactionId,
-        sampledValues,
-      });
-
-      // ----- 💾 OPTIONAL: Save to database -----
-      // await this.db.saveMeterValues({
-      //   transactionId: payload.transactionId,
-      //   connectorId: payload.connectorId,
-      //   chargePointId,
-      //   timestamp: new Date(timestamp),
-      //   sampledValues,
-      // });
-    }
-
-    // ----- ✅ Return proper OCPP acknowledgment -----
     return {};
   }
 
+  const { connectorId, transactionId } = payload;
+
+  // Track if we've already written startSoC for this transaction in this request
+  let startSocWritten = false;
+
+  for (const meterValue of payload.meterValue) {
+    const timestamp = meterValue.timestamp ?? new Date().toISOString();
+
+    for (const sv of meterValue.sampledValue || []) {
+      const measurand = sv.measurand ? sv.measurand : "Energy.Active.Import.Register";
+      
+      console.log("Processing meter value:", {
+        measurand,
+        value: sv.value,
+        transactionId,
+      });
+
+      // Handle SOC - only write startSoC once per transaction
+      if (measurand === "SoC") {
+        const soc = Number(sv.value);
+        
+        if (!Number.isNaN(soc)) {
+          // Check if transaction already has startSoC set
+          const transaction = await this.db.getTransaction(transactionId);
+          
+          if (transaction && !transaction.startSoC && !startSocWritten) {
+            // Only write if startSoC is null AND we haven't written it in this request
+            try {
+              const updateSOC = await this.db.writeSOCToTXN(transactionId, soc);
+              console.log(`✅ Successfully wrote startSoC=${soc}% for transaction ${transactionId}`);
+              startSocWritten = true;
+            } catch (error) {
+              console.error(`❌ Error writing startSoC:`, error);
+              // Don't fail the entire meter values request due to SOC write error
+            }
+          } else if (transaction?.startSoC) {
+            console.log(
+              `ℹ️  startSoC already set to ${transaction.startSoC}% for transaction ${transactionId}, skipping update`
+            );
+          }
+        }
+      }
+
+      // Send meter values to clients via API gateway
+      this.apiGateway.sendMeterValueToClients({
+        chargePointId,
+        connectorId,
+        transactionId,
+        timestamp: new Date(timestamp).toISOString(),
+        sampledValue: {
+          value: sv.value,
+          context: sv.context,
+          format: sv.format,
+          measurand,
+          phase: sv.phase,
+          location: sv.location,
+          unit: sv.unit,
+        },
+      });
+    }
+  }
+
+  // Return proper OCPP acknowledgment
+  return {};
+}
 
   // private async handleStartTransaction(
   //   chargePointId: string,

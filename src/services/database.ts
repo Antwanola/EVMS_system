@@ -273,6 +273,42 @@ public async createTransaction(data: {
     });
   }
 
+//   public async writeSOCToTXN( transactionId: number, soc: number): Promise<Transaction> {
+//     return await this.prisma.transaction.update({
+//       where: { transactionId, startSoC: null },
+//       data: { startSoC: soc },
+//   });
+// }
+
+public async writeSOCToTXN(transactionId: number, soc: number): Promise<Transaction> {
+  try {
+    // First check if transaction exists
+    const existingTransaction = await this.prisma.transaction.findUnique({
+      where: { transactionId },
+    });
+
+    if (!existingTransaction) {
+      console.error(`❌ Transaction ${transactionId} not found in database`);
+      throw new Error(`Transaction ${transactionId} does not exist`);
+    }
+
+    console.log(`✅ Found transaction ${transactionId}, updating SOC to ${soc}%`);
+
+    // Update the transaction with SOC value
+    // Use only transactionId in where clause, not startSoC condition
+    return await this.prisma.transaction.update({
+      where: { transactionId },
+      data: { 
+        startSoC: soc,
+        updatedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error(`❌ Error writing SOC to transaction ${transactionId}:`, error);
+    throw error;
+  }
+}
+
   public async getTransaction(transactionId: number): Promise<Transaction | null> {
     return this.prisma.transaction.findUnique({
       where: { transactionId },
