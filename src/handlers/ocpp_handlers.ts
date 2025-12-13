@@ -25,6 +25,7 @@ import {
 import { APIGateway } from "../services/api_gateway";
 import crypto from "crypto"
 import { idTagStatus } from "../helpers/helper";
+import { StopReason } from "@prisma/client";
 
 interface PendingCall {
   resolve: (value: any) => void;
@@ -125,70 +126,99 @@ export class OCPPMessageHandler {
   // ==================== CALL HANDLER ====================
 
   private async handleCall(
-    chargePointId: string,
-    uniqueId: string,
-    action: string,
-    payload: any,
-    connection: ChargePointConnection
-  ): Promise<any> {
+  chargePointId: string,
+  uniqueId: string,
+  action: string,
+  payload: any,
+  connection: ChargePointConnection
+): Promise<any> {
+  try {
+    let response: any;
 
-    try {
-      let response: any;
+    console.log(`\n📥 handleCall invoked:`);
+    console.log(`   chargePointId: ${chargePointId}`);
+    console.log(`   uniqueId: ${uniqueId}`);
+    console.log(`   action: ${action}`);
+    console.log(`   payload:`, payload);
 
-      switch (action) {
-        case "BootNotification":
-          console.log('🥾 Processing BootNotification...', payload);
-          response = await this.handleBootNotification(chargePointId, payload, connection);
-          console.log('🥾 BootNotification response:', response);
-          break;
+    switch (action) {
+      case "BootNotification":
+        console.log('🥾 Processing BootNotification...', payload);
+        response = await this.handleBootNotification(chargePointId, payload, connection);
+        console.log('🥾 BootNotification response:', response);
+        break;
 
-        case "Heartbeat":
-          response = await this.handleHeartbeat(chargePointId, connection);
-          break;
+      case "Heartbeat":
+        console.log('❤️  Processing Heartbeat...');
+        response = await this.handleHeartbeat(chargePointId, connection);
+        console.log('❤️  Heartbeat response:', response);
+        break;
 
-        case "StatusNotification":
-          response = await this.handleStatusNotification(chargePointId, payload, connection);
-          break;
+      case "StatusNotification":
+        console.log('📊 Processing StatusNotification...', payload);
+        response = await this.handleStatusNotification(chargePointId, payload, connection);
+        console.log('📊 StatusNotification response:', response);
+        break;
 
-        case "MeterValues":
-          response = await this.handleMeterValues(chargePointId, payload, connection);
-          break;
+      case "MeterValues":
+        console.log('⚡ Processing MeterValues...', payload);
+        response = await this.handleMeterValues(chargePointId, payload, connection);
+        console.log('⚡ MeterValues response:', response);
+        break;
 
-        case "StartTransaction":
-          response = await this.handleStartTransaction(chargePointId, payload, connection);
-          break;
+      case "StartTransaction":
+        console.log('🔋 Processing StartTransaction...', payload);
+        response = await this.handleStartTransaction(chargePointId, payload, connection);
+        console.log('🔋 StartTransaction response:', response);
+        break;
 
-        case "StopTransaction":
-          response = await this.handleStopTransaction(chargePointId, payload, connection);
-          break;
+      case "StopTransaction":
+        console.log('🛑 Processing StopTransaction...', payload);
+        response = await this.handleStopTransaction(chargePointId, payload, connection);
+        console.log('🛑 StopTransaction response:', response);
+        break;
 
-        case "Authorize":
-          response = await this.handleAuthorize(chargePointId, payload, connection);
-          break;
+      case "Authorize":
+        console.log('🔐 Processing Authorize...', payload);
+        response = await this.handleAuthorize(chargePointId, payload, connection);
+        console.log('🔐 Authorize response:', response);
+        break;
 
-        default:
-          this.logger.warn(`Unhandled action: ${action}`);
-          return [
-            MessageType.CALLERROR,
-            uniqueId,
-            "NotSupported",
-            `Action ${action} not supported`,
-            {},
-          ];
-      }
-
-      return [MessageType.CALLRESULT, uniqueId, response];
-    } catch (error) {
-      this.logger.error(`Error handling ${action}:`, error);
-      return [
-        MessageType.CALLERROR,
-        uniqueId,
-        "InternalError",
-        "Internal server error",
-        {},
-      ];
+      default:
+        console.warn(`⚠️  Unhandled action: ${action}`);
+        this.logger.warn(`Unhandled action: ${action}`);
+        const errorResponse = [
+          MessageType.CALLERROR,
+          uniqueId,
+          "NotSupported",
+          `Action ${action} not supported`,
+          {},
+        ];
+        console.log('📤 Returning error response:', errorResponse);
+        return errorResponse;
     }
+
+    // Build the CALLRESULT response
+    const callResultResponse = [MessageType.CALLRESULT, uniqueId, response];
+    console.log('📤 Returning CALLRESULT response:', JSON.stringify(callResultResponse));
+    console.log('   Format: [MessageType.CALLRESULT(3), uniqueId, responsePayload]\n');
+    
+    return callResultResponse;
+
+  } catch (error) {
+    console.error(`❌ Error handling ${action}:`, error);
+    this.logger.error(`Error handling ${action}:`, error);
+    const errorResponse = [
+      MessageType.CALLERROR,
+      uniqueId,
+      "InternalError",
+      "Internal server error",
+      {},
+    ];
+    console.log('📤 Returning error response:', errorResponse);
+    return errorResponse;
   }
+}
 
   // ==================== OCPP MESSAGE HANDLERS ====================
 
@@ -400,17 +430,17 @@ export class OCPPMessageHandler {
     console.log("The start config", { StartTransaction: payload });
 
     const connectorId = payload.connectorId;
-    const idTagValidation = await this.db.validateIdTag(payload.idTag);
+    // const idTagValidation = await this.db.validateIdTag(payload.idTag);
 
-    if (idTagValidation.status !== "ACCEPTED") {
-      return {
-        transactionId: -1,
-        idTagInfo: {
-          status: idTagValidation.status as any,
-          expiryDate: idTagValidation.expiryDate?.toISOString(),
-        },
-      };
-    }
+    // if (idTagValidation.status !== "ACCEPTED") {
+    //   return {
+    //     transactionId: -1,
+    //     idTagInfo: {
+    //       status: idTagValidation.status as any,
+    //       expiryDate: idTagValidation.expiryDate?.toISOString(),
+    //     },
+    //   };
+    // }
 
     const transactionId = 100000 + crypto.randomInt(0, 900000);
     console.log({ transactionId });
@@ -459,7 +489,7 @@ private async handleStopTransaction(
 
   // Get transaction using OCPP transactionId
   const transaction = await this.db.getTransaction(payload.transactionId);
-  console.log({ StopTransaction: payload, transaction });
+  console.log({ StopTransaction: payload });
 
   // If transaction not found → still respond Accepted
   if (!transaction) {
@@ -472,6 +502,33 @@ private async handleStopTransaction(
     };
   }
 
+      const stopReasonMap: Record<string, string> = {
+      "Local": "LOCAL",
+      "Remote": "REMOTE", 
+      "Emergency": "EMERGENCY_STOP",
+      "EVDisconnected": "EV_DISCONNECTED",
+      "HardReset": "HARD_RESET",
+      "SoftReset": "SOFT_RESET",
+      "Other": "OTHER",
+      "PowerLoss": "POWER_LOSS",
+      "Reboot": "REBOOT",
+      "UnlockCommand": "UNLOCK_COMMAND",
+      "DeAuthorized": "DE_AUTHORIZED",
+      "EnergyLimitReached": "ENERGY_LIMIT_REACHED",
+      "GroundFault": "GROUND_FAULT",
+      "ImmediateReset": "IMMEDIATE_RESET",
+      "LocalOutOfCredit": "LOCAL_OUT_OF_CREDIT",
+      "MasterPass": "MASTER_PASS",
+      "OvercurrentFault": "OVERCURRENT_FAULT",
+      "PowerQuality": "POWER_QUALITY",
+      "SOCLimitReached": "SOC_LIMIT_REACHED",
+      "StoppedByEV": "STOPPED_BY_EV",
+      "TimeLimitReached": "TIME_LIMIT_REACHED",
+      "Timeout": "TIMEOUT",
+    };
+    const reason = payload.reason;
+    const mappedReason = (reason && stopReasonMap[reason] ? stopReasonMap[reason] : "OTHER") as StopReason;
+
   const connectorId = transaction.connectorId ?? 1;
   const transactionPrimaryKey = transaction.id; // IMPORTANT: Prisma PK
 
@@ -480,7 +537,7 @@ private async handleStopTransaction(
     transaction.transactionId,
     payload.meterStop,
     new Date(payload.timestamp),
-    payload.reason
+    mappedReason
   );
 
   console.log({ updateTXN });
