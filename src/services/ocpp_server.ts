@@ -406,6 +406,7 @@ export class OCPPServer {
       chargeStations: Record<string, { connectors: Record<number, ChargingStationData> }>;
     } = { chargeStations: {} };
 
+    // First, get data from active connections
     this.connections.forEach((connection, stationId) => {
       const stationData: { connectors: Record<number, ChargingStationData> } = { connectors: {} };
       connection.connectors.forEach((connectorData, connectorId) => {
@@ -414,9 +415,72 @@ export class OCPPServer {
       structuredData.chargeStations[stationId] = stationData;
     });
 
-    // Store in Redis with TTL
-    await this.redis.set('chargeStations:all', JSON.stringify(structuredData), 30);
+    // If no active connections, try to get data from Redis cache
+    if (Object.keys(structuredData.chargeStations).length === 0) {
+      try {
+        const cachedData = await this.redis.get('chargeStations:all');
+        if (cachedData) {
+          const parsedData = JSON.parse(cachedData);
+          if (parsedData && parsedData.chargeStations) {
+            this.logger.info('Retrieved charge station data from Redis cache');
+            return parsedData;
+          }
+        }
+      } catch (error) {
+        this.logger.warn('Failed to retrieve cached data from Redis:', error);
+      }
 
+      // If no cached data, try to get from database
+      try {
+        const dbChargePoints = await this.db.getAllChargePoints() as any[];
+        if (dbChargePoints && dbChargePoints.length > 0) {
+          this.logger.info(`Retrieved ${dbChargePoints.length} charge points from database`);
+          
+          for (const chargePoint of dbChargePoints) {
+            if (chargePoint.connectors && chargePoint.connectors.length > 0) {
+              const stationData: { connectors: Record<number, ChargingStationData> } = { connectors: {} };
+              
+              chargePoint.connectors.forEach((connector: any) => {
+                stationData.connectors[connector.connectorId] = {
+                  chargePointId: chargePoint.id,
+                  connectorId: connector.connectorId,
+                  gunType: connector.type || 'TYPE2',
+                  status: connector.status || 'Unavailable',
+                  inputVoltage: 0,
+                  inputCurrent: 0,
+                  outputContactors: false,
+                  outputVoltage: 0,
+                  outputEnergy: 0,
+                  chargingEnergy: 0,
+                  alarm: null,
+                  stopReason: null,
+                  connected: false,
+                  gunTemperature: 25,
+                  stateOfCharge: 0,
+                  chargeTime: 0,
+                  remainingTime: 0,
+                  demandCurrent: 0,
+                  timestamp: connector.updatedAt || new Date()
+                };
+              });
+              
+              structuredData.chargeStations[chargePoint.id] = stationData;
+            }
+          }
+        }
+      } catch (error) {
+        this.logger.error('Failed to retrieve charge station data from database:', error);
+      }
+    }
+
+    // Store in Redis with TTL only if we have data
+    if (Object.keys(structuredData.chargeStations).length > 0) {
+      await this.redis.set('chargeStations:all', JSON.stringify(structuredData), 30);
+    }
+    
+    console.log("Structured Data: ", structuredData);
+    console.log("Active connections count:", this.connections.size);
+    console.log("Structured data stations count:", Object.keys(structuredData.chargeStations).length);
     return structuredData;
   }
 

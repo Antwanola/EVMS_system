@@ -36,6 +36,8 @@ interface PendingCall {
 export class OCPPMessageHandler {
   private readonly logger = Logger.getInstance();
   private readonly pendingCalls = new Map<string, PendingCall>();
+  private transactionSocCache = new Map<number, number>();
+
 
   constructor(
     private readonly db: DatabaseService,
@@ -338,6 +340,7 @@ export class OCPPMessageHandler {
     const timestamp = meterValue.timestamp ?? new Date().toISOString();
 
     for (const sv of meterValue.sampledValue || []) {
+      console.log("sampled Values from meter: ", sv)
       const measurand = sv.measurand ? sv.measurand : "Energy.Active.Import.Register";
       
       console.log("Processing meter value:", {
@@ -347,17 +350,19 @@ export class OCPPMessageHandler {
       });
 
       // Handle SOC - only write startSoC once per transaction
-      if (measurand === "SoC") {
+      // stopSoC should ONLY be handled in StopTransaction, not here
+      if (measurand === "SoC" && sv.value !== undefined) {
         const soc = Number(sv.value);
         
         if (!Number.isNaN(soc)) {
           // Check if transaction already has startSoC set
+          this.transactionSocCache.set(transactionId, soc)
           const transaction = await this.db.getTransaction(transactionId);
           
           if (transaction && !transaction.startSoC && !startSocWritten) {
             // Only write if startSoC is null AND we haven't written it in this request
             try {
-              const updateSOC = await this.db.writeSOCToTXN(transactionId, soc);
+              await this.db.writeStartSOCToTXN(transactionId, soc);
               console.log(`✅ Successfully wrote startSoC=${soc}% for transaction ${transactionId}`);
               startSocWritten = true;
             } catch (error) {
@@ -365,6 +370,9 @@ export class OCPPMessageHandler {
               // Don't fail the entire meter values request due to SOC write error
             }
           } else if (transaction?.startSoC) {
+            console.log(
+            `[SoC] tx=${transactionId} soc=${soc}%`
+          );
             console.log(
               `ℹ️  startSoC already set to ${transaction.startSoC}% for transaction ${transactionId}, skipping update`
             );
@@ -534,43 +542,50 @@ private async handleStopTransaction(
       idTagInfo: { status: "Accepted" }
     };
   }
+  const stopSoc = this.transactionSocCache.get(payload.transactionId) ?? null;
 
-      const stopReasonMap: Record<string, string> = {
-      "Local": "LOCAL",
-      "Remote": "REMOTE", 
-      "Emergency": "EMERGENCY_STOP",
-      "EVDisconnected": "EV_DISCONNECTED",
-      "HardReset": "HARD_RESET",
-      "SoftReset": "SOFT_RESET",
-      "Other": "OTHER",
-      "PowerLoss": "POWER_LOSS",
-      "Reboot": "REBOOT",
-      "UnlockCommand": "UNLOCK_COMMAND",
-      "DeAuthorized": "DE_AUTHORIZED",
-      "EnergyLimitReached": "ENERGY_LIMIT_REACHED",
-      "GroundFault": "GROUND_FAULT",
-      "ImmediateReset": "IMMEDIATE_RESET",
-      "LocalOutOfCredit": "LOCAL_OUT_OF_CREDIT",
-      "MasterPass": "MASTER_PASS",
-      "OvercurrentFault": "OVERCURRENT_FAULT",
-      "PowerQuality": "POWER_QUALITY",
-      "SOCLimitReached": "SOC_LIMIT_REACHED",
-      "StoppedByEV": "STOPPED_BY_EV",
-      "TimeLimitReached": "TIME_LIMIT_REACHED",
-      "Timeout": "TIMEOUT",
-    };
-    const reason = payload.reason;
-    const mappedReason = (reason && stopReasonMap[reason] ? stopReasonMap[reason] : "OTHER") as StopReason;
+  const stopReasonMap: Record<string, string> = {
+    "Local": "LOCAL",
+    "Remote": "REMOTE", 
+    "Emergency": "EMERGENCY_STOP",
+    "EVDisconnected": "EV_DISCONNECTED",
+    "HardReset": "HARD_RESET",
+    "SoftReset": "SOFT_RESET",
+    "Other": "OTHER",
+    "PowerLoss": "POWER_LOSS",
+    "Reboot": "REBOOT",
+    "UnlockCommand": "UNLOCK_COMMAND",
+    "DeAuthorized": "DE_AUTHORIZED",
+    "EnergyLimitReached": "ENERGY_LIMIT_REACHED",
+    "GroundFault": "GROUND_FAULT",
+    "ImmediateReset": "IMMEDIATE_RESET",
+    "LocalOutOfCredit": "LOCAL_OUT_OF_CREDIT",
+    "MasterPass": "MASTER_PASS",
+    "OvercurrentFault": "OVERCURRENT_FAULT",
+    "PowerQuality": "POWER_QUALITY",
+    "SOCLimitReached": "SOC_LIMIT_REACHED",
+    "StoppedByEV": "STOPPED_BY_EV",
+    "TimeLimitReached": "TIME_LIMIT_REACHED",
+    "Timeout": "TIMEOUT",
+  };
+  const reason = payload.reason;
+  const mappedReason = (reason && stopReasonMap[reason] ? stopReasonMap[reason] : "OTHER") as StopReason;
 
   const connectorId = transaction.connectorId ?? 1;
   const transactionPrimaryKey = transaction.id; // IMPORTANT: Prisma PK
 
-  // Update the transaction record
+  // Process transactionData for stopSoC BEFORE updating the transaction
+  let stopSoC: number | null = null;
+  
+
+
+  // Update the transaction record with stopSoC
   const updateTXN = await this.db.stopTransaction(
     transaction.transactionId,
     payload.meterStop,
     new Date(payload.timestamp),
-    mappedReason
+    mappedReason,
+    stopSoc // Pass stopSoC to the database method
   );
 
   console.log({ updateTXN });
@@ -590,30 +605,6 @@ private async handleStopTransaction(
     conn.chargingEnergy = payload.meterStop - transaction.meterStart;
     conn.timestamp = new Date();
     connection.connectors.set(connectorId, conn);
-  }
-
-  // Process transactionData → MeterValues + SampledValues
-  if (payload.transactionData?.length) {
-    const valuesToInsert = payload.transactionData.map((mv) => ({
-      timestamp: new Date(mv.timestamp),
-      connectorId: transaction.connectorId,
-      chargePointId,
-      sampledValues: mv.sampledValue.map((sv) => ({
-        value: sv.value,
-        context: sv.context ?? null,
-        format: sv.format ?? null,
-        measurand: sv.measurand ?? null,
-        phase: sv.phase ?? null,
-        location: sv.location ?? null,
-        unit: sv.unit ?? null,
-      }))
-    }));
-
-    // Save using your new Prisma helper method
-    await this.db.setMeterValuesUnderTXN(
-      transactionPrimaryKey,
-      valuesToInsert
-    );
   }
 
   return {
