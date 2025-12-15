@@ -24,7 +24,7 @@ export class APIGateway {
   private router: Router;
   private logger = Logger.getInstance();
   private rateLimiter?: RateLimiterRedis;
- public clients: Map<Response, { connectorId?: number }> = new Map();
+ public clients: Map<Response, { chargePointId?: string, connectorId?: number }> = new Map();
 
   constructor(
     private ocppServer: OCPPServer | null,
@@ -395,42 +395,68 @@ private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> 
 // Store clients with their connector filter
 // private clients: Map<Response, { connectorId?: number }> = new Map();
 
-public async streamMeterValues(req: AuthenticatedRequest, res: Response): Promise<void> {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
+public streamMeterValues(req: AuthenticatedRequest, res: Response): void {
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control',
+    'X-Accel-Buffering': 'no' // Disable nginx buffering
+  });
 
   // Get connector ID from query parameter
   const connectorId = req.query.connectorId 
     ? parseInt(req.query.connectorId as string) 
     : undefined;
+  const chargePointId = req.query.chargePointId as string;
 
   // Store client with their connector filter
-  this.clients.set(res, { connectorId });
+  this.clients.set(res, { chargePointId, connectorId });
   console.log("Connected clients:", this.clients.size);
+  console.log("Client filter:", { chargePointId, connectorId });
 
-  // Send initial connection confirmation (optional)
-  res.write(`data: ${JSON.stringify({ type: 'connected', connectorId })}\n\n`);
+  // Send initial connection confirmation
+  res.write(`data: ${JSON.stringify({ type: 'connected', connectorId, chargePointId })}\n\n`);
 
+  // Handle client disconnect
   req.on("close", () => {
     this.clients.delete(res);
     console.log("Client disconnected. Remaining clients:", this.clients.size);
   });
 
-  // Don't call sendMeterValueToClients here - it should be called 
-  // when you actually receive meter values from the charging station
+  req.on("error", (error) => {
+    console.log("Client connection error:", error);
+    this.clients.delete(res);
+    console.log("Client connection error. Remaining clients:", this.clients.size);
+  });
+
+  // Keep the connection open - don't call res.end()
 }
 
 // This should be called when you receive meter values from OCPP messages
 public sendMeterValueToClients = (data: any): void => {
   const connectorId = data.connectorId || data.connector_id;
+  const chargePointId = data.chargePointId || data.charge_point_id;
+  const transactionId = data.transactionId;
   
-  console.log(`Broadcasting meter value for connector ${connectorId} to ${this.clients.size} clients`);
+  // Only send meter values for active transactions
+  if (!transactionId) {
+    console.log(`Skipping meter value - no active transaction for charge point ${chargePointId}, connector ${connectorId}`);
+    return;
+  }
+  
+  console.log(`Broadcasting meter value for charge point ${chargePointId}, connector ${connectorId}, transaction ${transactionId} to ${this.clients.size} clients`);
   
   for (const [client, filter] of this.clients.entries()) {
     try {
-      // If client has a connector filter, only send matching data
+      // Filter by charge point ID if specified
+      if (filter.chargePointId !== undefined && filter.chargePointId !== chargePointId) {
+        continue;
+      }
+      
+      // Filter by connector ID if specified
       if (filter.connectorId !== undefined && filter.connectorId !== connectorId) {
         continue;
       }
