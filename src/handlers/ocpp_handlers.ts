@@ -53,6 +53,11 @@ export class OCPPMessageHandler {
     connection: ChargePointConnection
   ): Promise<any> {
     const [messageTypeId, uniqueId, actionOrErrorCode, payload] = message as any;
+    
+    // Debug only BootNotification messages
+    if (actionOrErrorCode === 'BootNotification') {
+      console.log(`🔍 BootNotification received - Type: ${messageTypeId}, ID: ${uniqueId}`);
+    }
 
     switch (messageTypeId) {
       case MessageType.CALL:
@@ -65,8 +70,8 @@ export class OCPPMessageHandler {
         );
 
       case MessageType.CALLRESULT:
-        this.handleCallResult(uniqueId, actionOrErrorCode);
-        return null;
+        return this.handleCallResult(uniqueId, actionOrErrorCode);
+        
 
       case MessageType.CALLERROR:
         this.handleCallError(uniqueId, actionOrErrorCode, payload);
@@ -137,88 +142,63 @@ export class OCPPMessageHandler {
   try {
     let response: any;
 
-    console.log(`\n📥 handleCall invoked:`);
-    console.log(`   chargePointId: ${chargePointId}`);
-    console.log(`   uniqueId: ${uniqueId}`);
-    console.log(`   action: ${action}`);
-    console.log(`   payload:`, payload);
+    this.logger.debug(`Processing ${action} from ${chargePointId}`, { uniqueId, payload });
 
     switch (action) {
       case "BootNotification":
-        console.log('🥾 Processing BootNotification...', payload);
         response = await this.handleBootNotification(chargePointId, payload, connection);
-        console.log('🥾 BootNotification response:', response);
         break;
 
       case "Heartbeat":
-        console.log('❤️  Processing Heartbeat...');
         response = await this.handleHeartbeat(chargePointId, connection);
-        console.log('❤️  Heartbeat response:', response);
         break;
 
       case "StatusNotification":
-        console.log('📊 Processing StatusNotification...', payload);
         response = await this.handleStatusNotification(chargePointId, payload, connection);
-        console.log('📊 StatusNotification response:', response);
         break;
 
       case "MeterValues":
-        console.log('⚡ Processing MeterValues...', payload);
         response = await this.handleMeterValues(chargePointId, payload, connection);
-        console.log('⚡ MeterValues response:', response);
         break;
 
       case "StartTransaction":
-        console.log('🔋 Processing StartTransaction...', payload);
         response = await this.handleStartTransaction(chargePointId, payload, connection);
-        console.log('🔋 StartTransaction response:', response);
         break;
 
       case "StopTransaction":
-        console.log('🛑 Processing StopTransaction...', payload);
         response = await this.handleStopTransaction(chargePointId, payload, connection);
-        console.log('🛑 StopTransaction response:', response);
         break;
 
       case "Authorize":
-        console.log('🔐 Processing Authorize...', payload);
         response = await this.handleAuthorize(chargePointId, payload, connection);
-        console.log('🔐 Authorize response:', response);
         break;
 
       default:
-        console.warn(`⚠️  Unhandled action: ${action}`);
-        this.logger.warn(`Unhandled action: ${action}`);
-        const errorResponse = [
+        this.logger.warn(`Unhandled action: ${action} from ${chargePointId}`);
+        return [
           MessageType.CALLERROR,
           uniqueId,
           "NotSupported",
           `Action ${action} not supported`,
           {},
         ];
-        console.log('📤 Returning error response:', errorResponse);
-        return errorResponse;
     }
 
     // Build the CALLRESULT response
     const callResultResponse = [MessageType.CALLRESULT, uniqueId, response];
-    console.log('📤 Returning CALLRESULT response:', JSON.stringify(callResultResponse));
-    console.log('   Format: [MessageType.CALLRESULT(3), uniqueId, responsePayload]\n');
+    this.logger.debug(`${action} completed for ${chargePointId}`, { response });
     
     return callResultResponse;
 
   } catch (error) {
-    console.error(`❌ Error handling ${action}:`, error);
-    this.logger.error(`Error handling ${action}:`, error);
-    const errorResponse = [
+    this.logger.error(`Error handling ${action} from ${chargePointId}:`, error);
+    return [
       MessageType.CALLERROR,
       uniqueId,
       "InternalError",
       "Internal server error",
       {},
     ];
-    console.log('📤 Returning error response:', errorResponse);
-    return errorResponse;
   }
 }
 
@@ -229,28 +209,57 @@ export class OCPPMessageHandler {
     payload: BootNotificationRequest,
     connection: ChargePointConnection
   ): Promise<BootNotificationResponse> {
-    this.logger.info(`Boot notification from ${chargePointId}:`, payload);
+    try {
+      console.log(`🥾 BOOT NOTIFICATION HANDLER CALLED for ${chargePointId}`);
+      console.log(`📋 Payload:`, JSON.stringify(payload, null, 2));
+      this.logger.info(`Boot notification from ${chargePointId}:`, payload);
 
-    await this.db.createOrUpdateChargePoint({
-      id: chargePointId,
-      vendor: payload.chargePointVendor,
-      model: payload.chargePointModel,
-      serialNumber: payload.chargePointSerialNumber,
-      firmwareVersion: payload.firmwareVersion,
-      iccid: payload.iccid,
-      imsi: payload.imsi,
-      meterType: payload.meterType,
-      meterSerialNumber: payload.meterSerialNumber,
-    });
+      // Validate required fields
+      if (!payload.chargePointVendor || !payload.chargePointModel) {
+        console.log(`❌ Missing required fields in BootNotification`);
+        return {
+          status: "Rejected",
+          currentTime: new Date().toISOString(),
+          interval: 0,
+        };
+      }
 
-    connection.bootNotificationSent = true;
-    connection.heartbeatInterval = 300; // 5 minutes
+      console.log(`💾 Attempting to save to database...`);
+      await this.db.createOrUpdateChargePoint({
+        id: chargePointId,
+        vendor: payload.chargePointVendor,
+        model: payload.chargePointModel,
+        serialNumber: payload.chargePointSerialNumber,
+        firmwareVersion: payload.firmwareVersion,
+        iccid: payload.iccid,
+        imsi: payload.imsi,
+        meterType: payload.meterType,
+        meterSerialNumber: payload.meterSerialNumber,
+      });
+      console.log(`✅ Database save successful`);
 
-    return {
-      status: "Accepted",
-      currentTime: new Date().toISOString(),
-      interval: connection.heartbeatInterval,
-    };
+      connection.bootNotificationSent = true;
+      connection.heartbeatInterval = 300; // 5 minutes
+
+      const response = {
+        status: "Accepted" as const,
+        currentTime: new Date().toISOString(),
+        interval: connection.heartbeatInterval,
+      };
+
+      console.log(`📤 Returning BootNotification response:`, response);
+      return response;
+
+    } catch (error) {
+      console.error(`❌ BootNotification error for ${chargePointId}:`, error);
+      this.logger.error(`Error in BootNotification for ${chargePointId}:`, error);
+      
+      return {
+        status: "Rejected",
+        currentTime: new Date().toISOString(),
+        interval: 0,
+      };
+    }
   }
 
   private async handleHeartbeat(
