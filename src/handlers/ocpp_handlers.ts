@@ -366,7 +366,16 @@ export class OCPPMessageHandler {
         if (!Number.isNaN(soc)) {
           // Check if transaction already has startSoC set
           this.transactionSocCache.set(transactionId, soc)
+          const startSocKey = `chargepoint:${chargePointId}:connector:${connectorId}:transaction:${transactionId}:startSOC`;
+           const existingStartSOC = await this.redis.get(startSocKey);
+           if(!existingStartSOC) {
+           await this.redis.set(startSocKey, soc.toString(), 'EX', 86400); // 24 hour expiry
+              console.log(`✅ Saved startSOC=${soc}% for CP:${chargePointId}, Connector:${connectorId}, Txn:${transactionId}`);
+           }
           const transaction = await this.db.getTransaction(transactionId);
+
+           const latestSocKey = `soc:${chargePointId}:${connectorId}:${transactionId}:latest`;
+    await this.redis.set(latestSocKey, soc.toString());
           
           if (transaction && !transaction.startSoC && !startSocWritten) {
             // Only write if startSoC is null AND we haven't written it in this request
@@ -552,6 +561,7 @@ private async handleStopTransaction(
     };
   }
   const stopSoc = this.transactionSocCache.get(payload.transactionId) ?? null;
+  console.log({stopSoc})
 
   const stopReasonMap: Record<string, string> = {
     "Local": "LOCAL",
@@ -583,8 +593,7 @@ private async handleStopTransaction(
   const connectorId = transaction.connectorId ?? 1;
   const transactionPrimaryKey = transaction.id; // IMPORTANT: Prisma PK
 
-  // Process transactionData for stopSoC BEFORE updating the transaction
-  let stopSoC: number | null = null;
+
   
 
 
@@ -615,6 +624,9 @@ private async handleStopTransaction(
     conn.timestamp = new Date();
     connection.connectors.set(connectorId, conn);
   }
+  // After storing stopSOC to database
+this.transactionSocCache.delete(payload.transactionId);
+
 
   return {
     idTagInfo: {
