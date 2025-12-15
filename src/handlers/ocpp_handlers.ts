@@ -214,16 +214,6 @@ export class OCPPMessageHandler {
       console.log(`📋 Payload:`, JSON.stringify(payload, null, 2));
       this.logger.info(`Boot notification from ${chargePointId}:`, payload);
 
-      // Validate required fields
-      if (!payload.chargePointVendor || !payload.chargePointModel) {
-        console.log(`❌ Missing required fields in BootNotification`);
-        return {
-          status: "Rejected",
-          currentTime: new Date().toISOString(),
-          interval: 0,
-        };
-      }
-
       console.log(`💾 Attempting to save to database...`);
       await this.db.createOrUpdateChargePoint({
         id: chargePointId,
