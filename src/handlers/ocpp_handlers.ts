@@ -369,7 +369,7 @@ export class OCPPMessageHandler {
           const startSocKey = `chargepoint:${chargePointId}:connector:${connectorId}:transaction:${transactionId}:startSOC`;
            const existingStartSOC = await this.redis.get(startSocKey);
            if(!existingStartSOC) {
-           await this.redis.set(startSocKey, soc.toString(), 'EX', 86400); // 24 hour expiry
+           await this.redis.set(startSocKey, soc.toString()); // 24 hour expiry
               console.log(`✅ Saved startSOC=${soc}% for CP:${chargePointId}, Connector:${connectorId}, Txn:${transactionId}`);
            }
           const transaction = await this.db.getTransaction(transactionId);
