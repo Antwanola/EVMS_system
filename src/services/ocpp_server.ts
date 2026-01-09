@@ -89,13 +89,13 @@ export class OCPPServer {
         bootNotificationSent: false,
         heartbeatInterval: 300000,
         connectors,
-        numberOfConnectors: numOfConnector?.connectorNum || 2,
+        numberOfConnectors: numOfConnector?.connectorNum || 1,
         meters: new Map<string, any>()
       };
 
       this.connections.set(chargePointID, connection);
       this.logger.info(`✅ Charge point ${chargePointID} connected with ${connection.numberOfConnectors} connectors`);
-      console.log(`✅ ${chargePointID} is now connected`);
+      console.log(`✅ ${chargePointID} is now connected` ,connection.currentData);
 
       // Setup WebSocket event handlers
       ws.on('message', (data) => {

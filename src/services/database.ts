@@ -40,14 +40,15 @@ export class DatabaseService {
 
   // Charge Point Management
   public async createOrUpdateChargePoint(data: {
-    id: string;
-    vendor: string;
-    model: string;
+    id: string;           // Make required
+    vendor: string;       // Make required  
+    model: string;        // Make required
     serialNumber?: string;
     firmwareVersion?: string;
     iccid?: string;
     imsi?: string;
     meterType?: string;
+    location?: string;
     meterSerialNumber?: string;
   }): Promise<ChargePoint> {
     return this.prisma.chargePoint.upsert({
@@ -61,6 +62,7 @@ export class DatabaseService {
         imsi: data.imsi,
         meterType: data.meterType,
         meterSerialNumber: data.meterSerialNumber,
+        location: data.location,
         isOnline: true,
         lastSeen: new Date(),
         updatedAt: new Date(),
@@ -75,6 +77,7 @@ export class DatabaseService {
         imsi: data.imsi,
         meterType: data.meterType,
         meterSerialNumber: data.meterSerialNumber,
+        location: data.location,
         isOnline: true,
         lastSeen: new Date(),
       },
@@ -82,11 +85,22 @@ export class DatabaseService {
   }
 
 
-  public async getIdTag(idTag: string): Promise<IdTag | null> {
-    const foundItem = await this.prisma.idTag.findUnique({
-      where: { idTag}
+  public async getUserByIdTag(idTag: string): Promise<(IdTag & { user: User | null }) | null> {
+    return await this.prisma.idTag.findUnique({
+      where: { idTag },
+      include: {
+        user: true
+      }
     })
-    return foundItem;
+  }
+
+  public async getIdTag(idTag: string): Promise<IdTag | null> {
+    return await this.prisma.idTag.findUnique({
+      where: { idTag },
+      include: {
+        user: true
+      }
+    });
   }
 
  public async updateChargePointStatus(chargePointId: string, isOnline: boolean): Promise<void> {
@@ -377,7 +391,11 @@ public async writeStopSOCToTXN(transactionId: number, stopSoC: number): Promise<
     where: options?.where,
     orderBy: options?.orderBy,
     include: {
-      idTag: true,
+      idTag: {
+        include: {
+          user: true
+        }
+      },
       chargePoint: true,
       connector: true,
       meterValues: {
@@ -555,7 +573,7 @@ public async getUserById(id: string): Promise<UserSecureWithRelations | null> {
   return this.prisma.user.findUnique({
     where: { id },
     include: {
-      idTag: true,               // ✅ must match schema
+      idTag: true,
       permissions: true,
       chargePointAccess: true,
     },
