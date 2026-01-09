@@ -336,3 +336,14 @@ export interface APIResponse<T = any> {
   error?: string;
   timestamp: string;
 }
+
+export type LiveMeterState = {
+  connectorId: number;
+  transactionId: number;
+  timestamp: string;
+  voltage?: number;
+  current?: number;
+  power?: number;
+  soc?: number;
+  temperature?: number;
+};

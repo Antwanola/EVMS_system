@@ -14,6 +14,8 @@ import { TransactionQueryParams } from '../types/TnxQueryType';
 import crypto from 'crypto';
 import { UserStrutcture } from '../types/apiHelperypes';
 import { generateHashedCode, idTagStatus } from '../helpers/helper';
+import { stringify } from 'querystring';
+import { ClientFilter } from '@/types/stream_types';
 
 
 interface AuthenticatedRequest extends Request {
@@ -24,7 +26,8 @@ export class APIGateway {
   private router: Router;
   private logger = Logger.getInstance();
   private rateLimiter?: RateLimiterRedis;
- public clients: Map<Response, { chargePointId?: string, connectorId?: number }> = new Map();
+//  public clients: Map<Response, { chargePointId?: string, connectorId?: number }> = new Map();
+  public clients: Map<Response, ClientFilter> = new Map()
 
   constructor(
     private ocppServer: OCPPServer | null,
@@ -63,6 +66,7 @@ export class APIGateway {
     this.router.post('/auth/login', this.login.bind(this));
     this.router.post('/auth/register', this.register.bind(this));
     this.router.post('/auth/refresh', this.refreshToken.bind(this));
+
     
     // Charge point routes
     this.router.get('/charge-points', this.authenticateUser.bind(this), this.getChargePoints.bind(this));
@@ -79,6 +83,7 @@ export class APIGateway {
 
     // Transaction routes
     this.router.get('/transactions', this.authenticateUser.bind(this), this.getTransactions.bind(this));
+    this.router.get('/transactions/latest/', this.authenticateUser.bind(this),  this.getLatest5TXN.bind(this));
     this.router.get('/transactions/:id', this.authenticateUser.bind(this), this.getTransaction.bind(this));
     this.router.get('/transactions/active', this.authenticateUser.bind(this), this.getActiveTransactions.bind(this));
 
@@ -87,11 +92,13 @@ export class APIGateway {
     this.router.post('/charge-points/remote-stop/:chargePointId/:transactionId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.remoteStopTransaction.bind(this));
     this.router.post('/charge-points/:id/reset', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.resetChargePoint.bind(this));
     this.router.post('/charge-points/:id/unlock', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.unlockConnector.bind(this));
+    this.router.post('/update-charge-point/:chargePointId', this.authenticateUser.bind(this), this.updateChargeStation.bind(this));
 
     // Configuration routes
     this.router.get('/charge-points/:id/configuration', this.authenticateUser.bind(this), this.getConfiguration.bind(this));
     this.router.post('/charge-points/:id/configuration', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.changeConfiguration.bind(this));
-    this.router.get('/stream-metervalues', this.authenticateUser.bind(this), this.streamMeterValues.bind(this));
+    this.router.get('/stream-metervalues/:chargePointId/:connectorId', this.streamMeterValues.bind(this));
+    this.router.get('/get-user-by-idtag/:idTag', this.authenticateUser.bind(this), this.getUserByIdTag.bind(this));
 
     // Alarm routes
     this.router.get('/alarms', this.authenticateUser.bind(this), this.getAlarms.bind(this));
@@ -300,6 +307,36 @@ export class APIGateway {
     }
   }
 
+  private async getUserByIdTag(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const { idTag } = req.params;
+    if(!idTag) {
+      this.sendErrorResponse(res, 400, 'no idTag value found in input');
+      return;
+    }
+
+    try { 
+      const idTagData = await this.db.getUserByIdTag(idTag);
+      if(!idTagData || !idTagData.user) {
+        return this.sendErrorResponse(res, 404, "user not found");
+      }
+      
+      // Return the user data (excluding sensitive fields like password)
+      const { password, ...userWithoutPassword } = idTagData.user;
+      this.sendSuccessResponse(res, {
+        message: 'User fetched successfully',
+        user: userWithoutPassword,
+        idTag: {
+          idTag: idTagData.idTag,
+          status: idTagData.status,
+          expiryDate: idTagData.expiryDate
+        }
+      });
+      console.log({user: userWithoutPassword});
+    } catch (error: any) {
+      return this.sendErrorResponse(res, 500, error.message);
+    }
+  }
+
 
   
 private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -395,80 +432,114 @@ private async editUser(req: AuthenticatedRequest, res: Response): Promise<void> 
 // Store clients with their connector filter
 // private clients: Map<Response, { connectorId?: number }> = new Map();
 
-public streamMeterValues(req: AuthenticatedRequest, res: Response): void {
-  // Set SSE headers
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Cache-Control',
-    'X-Accel-Buffering': 'no' // Disable nginx buffering
-  });
+// public streamMeterValues(req: AuthenticatedRequest, res: Response): void {
+//   res.writeHead(200, {
+//     'Content-Type': 'text/event-stream',
+//     'Cache-Control': 'no-cache',
+//     'Connection': 'keep-alive',
+//     'Access-Control-Allow-Origin': '*',
+//     'X-Accel-Buffering': 'no',
+//   });
 
-  // Get connector ID from query parameter
-  const connectorId = req.query.connectorId 
-    ? parseInt(req.query.connectorId as string) 
-    : undefined;
-  const chargePointId = req.query.chargePointId as string;
+//   res.flushHeaders?.();
 
-  // Store client with their connector filter
-  this.clients.set(res, { chargePointId, connectorId });
-  console.log("Connected clients:", this.clients.size);
-  console.log("Client filter:", { chargePointId, connectorId });
+//   const chargePointId = req.params.chargePointId as string;
+//   const connectorId = req.params.connectorId as string;
+//   const normaliseConnector = Number(connectorId)
+//     console.log(chargePointId, normaliseConnector )
 
-  // Send initial connection confirmation
-  res.write(`data: ${JSON.stringify({ type: 'connected', connectorId, chargePointId })}\n\n`);
+//   if (!chargePointId) {
+//     res.write(`data: ${JSON.stringify({ error: 'chargePointId is required' })}\n\n`);
+//     return;
+//   }
 
-  // Handle client disconnect
-  req.on("close", () => {
-    this.clients.delete(res);
-    console.log("Client disconnected. Remaining clients:", this.clients.size);
-  });
+//   // this.clients.set(res, { chargePointId, connectorId });
 
-  req.on("error", (error) => {
-    console.log("Client connection error:", error);
-    this.clients.delete(res);
-    console.log("Client connection error. Remaining clients:", this.clients.size);
-  });
+//   res.write(`data: ${JSON.stringify({ type: 'connected', chargePointId, connectorId })}\n\n`);
 
-  // Keep the connection open - don't call res.end()
-}
+//   const heartbeat = setInterval(() => {
+//     res.write(`:\n\n`);
+//   }, 15000);
+
+//   req.on('close', () => {
+//     clearInterval(heartbeat);
+//     this.clients.delete(res);
+//     this.logger.info('SSE client disconnected');
+//   });
+
+//   req.on('error', () => {
+//     clearInterval(heartbeat);
+//     this.clients.delete(res);
+//   });
+// }
 
 // This should be called when you receive meter values from OCPP messages
-public sendMeterValueToClients = (data: any): void => {
-  const connectorId = data.connectorId || data.connector_id;
-  const chargePointId = data.chargePointId || data.charge_point_id;
-  const transactionId = data.transactionId;
-  
-  // Only send meter values for active transactions
-  if (!transactionId) {
-    console.log(`Skipping meter value - no active transaction for charge point ${chargePointId}, connector ${connectorId}`);
-    return;
+// public sendMeterValueToClients(data: any): void {
+//   const connectorId = Number(data.connectorId ?? data.connector_id);
+//   const chargePointId = data.chargePointId ?? data.charge_point_id;
+//   const transactionId = data.transactionId;
+
+//   if (!transactionId) return;
+
+//   for (const [client, filter] of this.clients.entries()) {
+//     try {
+//       if (filter.chargePointId && filter.chargePointId !== chargePointId) continue;
+//       if (filter.connectorId !== undefined && filter.connectorId !== connectorId) continue;
+
+//       client.write(`data: ${JSON.stringify(data)}\n\n`);
+//     } catch {
+//       this.clients.delete(client);
+//     }
+//   }
+// }
+
+
+  public async streamMeterValues(req: AuthenticatedRequest, res: Response): Promise<void> {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    const { chargePointId, connectorId } = req.params;
+    const normalizedConnectorId = connectorId ? parseInt(connectorId, 10): undefined;
+
+    // this.clients.push(res);
+    this.clients.set(res, { chargePointId,  connectorId: normalizedConnectorId})
+      res.write(`data: ${JSON.stringify({ 
+    type: 'connected', 
+    filters: { chargePointId, connectorId } 
+  })}\n\n`);
+
+    req.on("close", () => {
+      this.clients.delete(res)
+    });
   }
-  
-  console.log(`Broadcasting meter value for charge point ${chargePointId}, connector ${connectorId}, transaction ${transactionId} to ${this.clients.size} clients`);
-  
-  for (const [client, filter] of this.clients.entries()) {
-    try {
-      // Filter by charge point ID if specified
-      if (filter.chargePointId !== undefined && filter.chargePointId !== chargePointId) {
-        continue;
+
+  public sendMeterValueToClients = (data: any): void => {
+    const meterChargePointId = data.chargePointId;
+    const meterConnectorId = data.connectorId;
+    for (const [client, filter] of this.clients.entries()) {
+      try {
+        //chargePoint Filter
+        if(filter.chargePointId && filter.chargePointId!== meterChargePointId) {
+          continue;
+        }
+
+        //connector filter
+      if (filter.connectorId !== undefined && filter.connectorId !== meterConnectorId) {
+        continue; 
       }
-      
-      // Filter by connector ID if specified
-      if (filter.connectorId !== undefined && filter.connectorId !== connectorId) {
-        continue;
+    
+        client.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (error) {
+        this.logger.error('Error sending meter value to client:', error);
+        this.clients.delete(client)
       }
-      
-      client.write(`data: ${JSON.stringify(data)}\n\n`);
-    } catch (error) {
-      this.logger.error('Error sending meter value to client:', error);
-      // Remove failed client
-      this.clients.delete(client);
     }
   }
-}
+
   // Charge point endpoints
   private async getChargePoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -693,19 +764,22 @@ public sendMeterValueToClients = (data: any): void => {
       }
       
       const operatorIdTag = req.user?.idTag?.idTag;
+      console.log({operatorIdTag})
       if(!operatorIdTag){
         throw new Error("no idTag detected for operator")
       }
-   const tagData = await this.db.getIdTag(operatorIdTag);
-        if (!tagData || tagData.status !== "ACCEPTED") { // CORRECTED: Simplified status check
-            throw new Error("Operator tag is not valid or accepted.");
-        }
       
+      // Use getUserByIdTag instead of getUserById since operatorIdTag is the actual idTag string
+      const idTagData = await this.db.getUserByIdTag(operatorIdTag);
+      console.log({idTagData})
+      if (!idTagData || idTagData.status !== "ACCEPTED") {
+          throw new Error("Operator tag is not valid or accepted.");
+      }
 
       // const { idTag, connectorId } = req.body;
 
       const result = await this.ocppServer.sendMessage(chargePointId, 'RemoteStartTransaction', {
-        idTag:tagData.idTag,
+        idTag: operatorIdTag, // Use the actual idTag string
         connectorId:parseInt(connectorId, 10),
       });
 
@@ -816,7 +890,11 @@ public sendMeterValueToClients = (data: any): void => {
       if (search) {
         where.OR = [
           { chargePointId: { contains: search, mode: 'insensitive' } },
-          { idTag: { contains: search, mode: 'insensitive' } },
+          { 
+            idTag: { 
+              idTag: { contains: search, mode: 'insensitive' } 
+            } 
+          }, // Search by the actual idTag string
         ];
 
         const searchNumber = parseInt(search);
@@ -848,7 +926,85 @@ public sendMeterValueToClients = (data: any): void => {
       this.logger.error('Error fetching transactions:', error);
       return this.sendErrorResponse(res, 500, 'Failed to fetch transactions');
     }
+  } 
+
+  private async getLatest5TXN(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    // Extract query parameters with defaults
+    const {
+      page = '1',
+      limit = '5',
+      search = '',
+      sortBy = 'stopTimestamp',
+      order = 'desc'
+    } = req.query as TransactionQueryParams;
+
+    const pageNumber = Math.max(1, parseInt(page));
+    const limitNumber = Math.max(1, Math.min(100, parseInt(limit))); // Max 100 items per page
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const where: any = {};
+    // Only show completed transactions (those with both meterStart and meterStop)
+    where.meterStop = { not: null };
+    where.stopTimestamp = { not: null };
+
+    if (search) {
+      where.OR = [
+        { chargePointId: { contains: search, mode: 'insensitive' } },
+        { 
+          idTag: { 
+            idTag: { contains: search, mode: 'insensitive' } 
+          } 
+        }, // Search by the actual idTag string
+      ];
+
+      const searchNumber = parseInt(search);
+      if (!isNaN(searchNumber)) {
+        where.OR.push({ transactionId: searchNumber });
+      }
+    }
+
+    const orderBy = { [sortBy]: order };
+    const [total, transactions] = await Promise.all([
+      this.db.getTransactionsCount(where),
+      this.db.getTransactions({ skip, take: limitNumber, where, orderBy })
+    ]);
+
+    if (!transactions || transactions.length === 0) {
+      return this.sendErrorResponse(res, 404, 'No transactions found');
+    }
+
+    // Enrich transactions with usernames
+    const enrichedTxn = transactions.map((transaction: any) => {
+      let username = null;
+      // Use the idTag relation that's already included in the transaction
+      if (transaction.idTag?.user?.username) {
+        username = transaction.idTag.user.username;
+      }
+      
+      return {
+        ...transaction,
+        username // Add username to transaction object
+      };
+    });
+
+    return this.sendSuccessResponse(res, {
+      transactions: enrichedTxn, // Fixed: return enriched transactions
+      pagination: {
+        total,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(total / limitNumber)
+      }
+    });
+  } catch (error) {
+    this.logger.error('Error fetching transactions:', error);
+    return this.sendErrorResponse(res, 500, 'Failed to fetch transactions');
   }
+}
+
+
+
 
   private async getTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -1178,5 +1334,39 @@ public sendMeterValueToClients = (data: any): void => {
       this.logger.error('Error fetching connector:', error);
       return this.sendErrorResponse(res, 500, 'Failed to fetch connector');
     }
+  }
+
+
+  private async updateChargeStation(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const { location } = req.body;
+    const { chargePointId } = req.params;
+    
+    if (!chargePointId) {
+       return this.sendErrorResponse(res, 400, "No chargePoint specified")
+    }
+    
+    const CP = await this.db.getChargePoint(chargePointId)
+    if (!CP || CP.id !== chargePointId) {
+      return this.sendErrorResponse(res, 404, "No matching charge point found")
+    }
+
+    const updateData = {
+      id: chargePointId,
+      vendor: CP.vendor,
+      model: CP.model,
+      location: location,
+      serialNumber: CP.serialNumber || undefined,
+      firmwareVersion: CP.firmwareVersion || undefined,
+      iccid: CP.iccid || undefined,
+      imsi: CP.imsi || undefined,
+      meterType: CP.meterType || undefined,
+      meterSerialNumber: CP.meterSerialNumber || undefined
+    };
+    
+    const chargePointData = await this.db.createOrUpdateChargePoint(updateData);
+    if (!chargePointData) {
+      return this.sendErrorResponse(res, 500, "Failed to update charge point")
+    }
+    return this.sendSuccessResponse(res, chargePointData)
   }
 }
