@@ -103,6 +103,18 @@ model Transaction {
   startSoC Int?
   stopSoC Int?
 
+  // Vehicle relation (optional - not all transactions may have a vehicle)
+  vehicleId String?
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  
+  // Audit trail - preserve user/vehicle/fleet info even if they're deleted
+  originalUserId String? // Store user ID at time of transaction
+  originalVehicleId String? // Store vehicle ID at time of transaction
+  originalFleetId String? // Store fleet ID at time of transaction (for reporting)
+  userDisplayName String? // Store username at time of transaction
+  vehicleDisplayName String? // Store vehicle info at time of transaction
+  fleetDisplayName String? // Store fleet name at time of transaction
+
   // Related Records
   meterValues MeterValue[]
 
@@ -179,6 +191,79 @@ model SampledValue {
   @@map("sampled_values")
 }
 
+model Fleet {
+  id                String   @id @default(cuid())
+  
+  // Organization details
+  name              String
+  organizationName  String?  // Legal organization name if different from display name
+  registrationNumber String? @unique // Business registration number
+  taxId             String?  @unique // Tax identification number
+  
+  // Contact information
+  contactEmail      String
+  contactPhone      String?
+  website           String?
+  
+  // Address information
+  address           String?
+  city              String?
+  state             String?
+  country           String?
+  postalCode        String?
+  
+  // Fleet management
+  fleetSize         Int      @default(0) // Auto-calculated from vehicles count
+  fleetType         FleetType @default(COMMERCIAL) // Commercial, Government, Personal, etc.
+  
+  // Billing and account management
+  billingEmail      String?
+  accountManager    String?  // Assigned account manager
+  creditLimit       Float?   // Credit limit for charging
+  paymentTerms      String?  // Payment terms (NET30, etc.)
+  
+  // Status management for soft delete
+  isActive          Boolean  @default(true)
+  status            String   @default("Active") // "Active", "Suspended", "Deleted", "Pending"
+  
+  // Audit trail fields
+  deletedAt         DateTime?
+  deletedBy         String?  // ID of admin who deleted this fleet
+  deleteReason      String?  // Reason for deletion
+  
+  // Relationships
+  vehicles          Vehicle[]
+  fleetManagers     FleetManager[] // Users who can manage this fleet
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("fleets")
+}
+
+model FleetManager {
+  id        String @id @default(cuid())
+  
+  fleetId   String
+  fleet     Fleet  @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Management permissions
+  role      FleetManagerRole @default(VIEWER) // ADMIN, MANAGER, VIEWER
+  canManageVehicles Boolean @default(false)
+  canViewReports    Boolean @default(true)
+  canManageBilling  Boolean @default(false)
+  
+  // Audit trail
+  assignedAt DateTime @default(now())
+  assignedBy String?  // Who assigned this manager
+  
+  @@unique([fleetId, userId]) // One role per user per fleet
+  @@map("fleet_managers")
+}
+
 model User {
   id        String   @id @default(cuid())
   username  String   @unique
@@ -188,15 +273,23 @@ model User {
   phone     String?
   firstname String?
   lastname  String?
+  
+  // Status management for soft delete
   isActive  Boolean  @default(true)
-  status    String?  @default("Active")
+  status    String?  @default("Active") // "Active", "Suspended", "Deleted", "Inactive"
   apiKey    String?  @unique
+
+  // Audit trail fields
+  deletedAt DateTime?
+  deletedBy String?  // ID of admin who deleted this user
+  deleteReason String? // Reason for deletion
 
   // One-to-one relation
   idTag   IdTag?  @relation(fields: [idTagId], references: [id])
   idTagId String? @unique // foreign key, must be unique for one-to-one
   
-  vehicles Vehicle[] // Fixed: proper relation name and array
+  vehicles Vehicle[] // Personal vehicles
+  fleetManagements FleetManager[] // Fleets this user manages
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -205,17 +298,7 @@ model User {
   permissions       Permission[]
 }
 
-model Vehicle { // Fixed: singular model name
-  id           String   @id @default(cuid())
-  userId       String
-  licensePlate String   @unique
-  make         String?
-  model        String?
-  color        String?
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("vehicles")
-}
+// Removed duplicate Vehicle model - keeping the more complete one below
 
 model Permission {
   id       String @id @default(cuid())
@@ -274,12 +357,75 @@ model IdTag {
   parentIdTag String?
   status      IdTagStatus @default(ACCEPTED)
 
-  user         User? // One-to-one back-relation
+  // Status management for soft delete
+  isActive    Boolean     @default(true)
+  
+  // Audit trail fields
+  deletedAt   DateTime?
+  deletedBy   String?     // ID of admin who deleted this idTag
+  deleteReason String?    // Reason for deletion
+  
+  // Expiry and lifecycle
   expiryDate   DateTime?
+  lastUsed     DateTime?  // Track when this tag was last used
+  
+  user         User? // One-to-one back-relation
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]
 }
+
+model Vehicle {
+  id                 String   @id @default(cuid())
+
+  // Owner relationship (individual owner)
+  ownerId            String?  // Made optional for fleet vehicles
+  owner              User?    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  
+  // Fleet relationship (organizational owner)
+  fleetId            String?  // Optional - vehicle can belong to fleet OR individual
+  fleet              Fleet?   @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  vin                String?  @unique
+  licensePlate       String?
+  nickname           String?
+
+  make               String
+  model              String
+  year               Int?
+  vehicleType        VehicleType
+
+  batteryCapacityKWh Float
+  maxACPowerKW       Float?
+  maxDCPowerKW       Float?
+
+  chargingStandards  ChargingStandard[]
+
+  // Status management for soft delete
+  isActive           Boolean  @default(true)
+  status             String   @default("Active") // "Active", "Inactive", "Transferred", "Deleted"
+  
+  // Audit trail fields
+  deletedAt          DateTime?
+  deletedBy          String?  // ID of admin who deleted this vehicle
+  deleteReason       String?  // Reason for deletion
+  
+  // Ownership audit trail
+  originalOwnerId    String?  // Individual owner ID (if applicable)
+  originalFleetId    String?  // Fleet ID (if applicable)
+  transferredAt      DateTime? // When ownership was last transferred
+  transferredBy      String?  // Who authorized the transfer
+
+  // Many-to-many relation with transactions (a vehicle can have multiple transactions)
+  transactions       Transaction[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Note: Ensure in application logic that vehicle belongs to either individual OR fleet, not both
+  @@map("vehicles")
+}
+
 
 enum ConnectorType {
   CCS
@@ -368,4 +514,56 @@ enum IdTagStatus {
   CONCURRENT_TX
 
   @@map("id_tag_status")
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  HATCHBACK
+  COUPE
+  CONVERTIBLE
+  TRUCK
+  VAN
+  MOTORCYCLE
+  BUS
+  OTHER
+
+  @@map("vehicle_type")
+}
+
+enum ChargingStandard {
+  CCS1
+  CCS2
+  CHADEMO
+  TYPE1_AC
+  TYPE2_AC
+  TESLA_SUPERCHARGER
+  GBT_AC
+  GBT_DC
+
+  @@map("charging_standard")
+}
+
+enum FleetType {
+  COMMERCIAL      // Commercial businesses
+  GOVERNMENT      // Government agencies
+  LOGISTICS       // Delivery/logistics companies
+  TAXI_RIDESHARE  // Taxi and rideshare services
+  RENTAL          // Car rental companies
+  PERSONAL        // Large personal fleets
+  UTILITY         // Utility companies
+  EMERGENCY       // Emergency services
+  PUBLIC_TRANSPORT // Buses, public vehicles
+  OTHER
+
+  @@map("fleet_type")
+}
+
+enum FleetManagerRole {
+  ADMIN    // Full fleet management access
+  MANAGER  // Can manage vehicles and view reports
+  VIEWER   // Read-only access to fleet data
+  BILLING  // Billing and payment management only
+
+  @@map("fleet_manager_role")
 }
