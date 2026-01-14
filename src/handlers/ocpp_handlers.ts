@@ -26,7 +26,7 @@ import {
 import { APIGateway } from "../services/api_gateway";
 import crypto from "crypto"
 import { idTagStatus } from "../helpers/helper";
-import { StopReason } from "@prisma/client";
+import { StopReason} from "../types/ocpp_types"
 
 interface PendingCall {
   resolve: (value: any) => void;

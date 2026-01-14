@@ -1,9 +1,10 @@
 // src/services/database.ts
-import { PrismaClient, Prisma, ChargePoint, Connector, User, Transaction, IdTag, ConnectorStatus, ChargingData, Alarm } from '@prisma/client';
+import { PrismaClient, Prisma, ChargePoint, Connector, User, Transaction, IdTag, ConnectorStatus, ChargingData, Alarm, Fleet, FleetManager, Vehicle, SystemSettings, SettingsHistory } from '@prisma/client';
 import { Logger } from '../Utils/logger';
 import { ChargingStationData, ConnectorType, ChargePointStatus, StopReason, CreatedTransactionResult } from '../types/ocpp_types';
 import { UserSecureWithRelations, UserWithRelations } from '../types/userWithRelations';
 import { schemas } from '../middleware/validation';
+import { Console } from 'console';
 
 export class DatabaseService {
   private prisma: PrismaClient;
@@ -40,9 +41,9 @@ export class DatabaseService {
 
   // Charge Point Management
   public async createOrUpdateChargePoint(data: {
-    id: string;           // Make required
-    vendor: string;       // Make required  
-    model: string;        // Make required
+    id: string;           
+    vendor: string;        
+    model: string;        
     serialNumber?: string;
     firmwareVersion?: string;
     iccid?: string;
@@ -272,11 +273,10 @@ public async createTransaction(data: {
   
   return this.prisma.transaction.create({
       data: transactionCreationData,
-      // 🎯 CORRECTION: Use SELECT to explicitly return the OCPP transactionId
       select: {
-          id: true, // Internal DB Primary Key (often needed later)
-          transactionId: true, // <-- The crucial OCPP ID number for the Connector update
-          startTimestamp: true, // Useful for logs/next steps
+          id: true, 
+          transactionId: true, 
+          startTimestamp: true,
       }
   });
 }
@@ -306,6 +306,8 @@ public async createTransaction(data: {
 //       data: { startSoC: soc },
 //   });
 // }
+
+
 
 public async writeStartSOCToTXN(transactionId: number, soc: number): Promise<Transaction> {
   try {
@@ -669,6 +671,210 @@ public async getAllUsers(): Promise<UserWithRelations[]> {
     },
   });
 }
+
+  // Vehicle Management
+  public async getAllVehicles(): Promise<any[]> {
+    return this.prisma.vehicle.findMany({
+      where: { isActive: true },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            firstname: true,
+            lastname: true,
+          },
+        },
+        fleet: {
+          select: {
+            id: true,
+            name: true,
+            organizationName: true,
+            fleetType: true,
+          },
+        },
+        transactions: {
+          include: {
+            chargePoint: true,
+            connector: true,
+            idTag: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            startTimestamp: 'desc',
+          },
+          take: 10, // Limit to last 10 transactions to avoid performance issues
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  public async getVehicleById(id: string): Promise<any | null> {
+    return this.prisma.vehicle.findUnique({
+      where: { id },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            firstname: true,
+            lastname: true,
+          },
+        },
+        fleet: {
+          select: {
+            id: true,
+            name: true,
+            organizationName: true,
+            fleetType: true,
+          },
+        },
+        transactions: {
+          include: {
+            chargePoint: true,
+            connector: true,
+            idTag: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            startTimestamp: 'desc',
+          },
+        },
+      },
+    });
+  }
+
+  public async createVehicle(data: {
+    ownerId?: string;
+    fleetId?: string;
+    vin?: string;
+    licensePlate?: string;
+    nickname?: string;
+    make: string;
+    model: string;
+    year?: number;
+    vehicleType: 'SEDAN' | 'SUV' | 'HATCHBACK' | 'COUPE' | 'CONVERTIBLE' | 'TRUCK' | 'VAN' | 'MOTORCYCLE' | 'BUS' | 'OTHER';
+    batteryCapacityKWh: number;
+    maxACPowerKW?: number;
+    maxDCPowerKW?: number;
+    chargingStandards?: ('CCS1' | 'CCS2' | 'CHADEMO' | 'TYPE1_AC' | 'TYPE2_AC' | 'TESLA_SUPERCHARGER' | 'GBT_AC' | 'GBT_DC')[];
+  }): Promise<any> {
+    console.log("FLEET ID", data.fleetId);
+    console.log("OWNER ID", data.ownerId);
+
+    // Normalize empty strings to null/undefined
+    const ownerId = data.ownerId && data.ownerId.trim() !== '' ? data.ownerId : null;
+    const fleetId = data.fleetId && data.fleetId.trim() !== '' ? data.fleetId : null;
+
+    console.log("NORMALIZED - FLEET ID", fleetId);
+    console.log("NORMALIZED - OWNER ID", ownerId);
+
+    // Validate that vehicle belongs to either individual OR fleet, not both
+    if (ownerId && fleetId) {
+      throw new Error('Vehicle cannot belong to both individual owner and fleet');
+    }
+    if (!ownerId && !fleetId) {
+      throw new Error('Vehicle must belong to either individual owner or fleet');
+    }
+
+    // Build the data object with normalized values
+    const createData = {
+      ...data,
+      ownerId: ownerId,
+      fleetId: fleetId,
+      originalOwnerId: ownerId,
+      originalFleetId: fleetId,
+    };
+
+    return this.prisma.vehicle.create({
+      data: createData,
+      include: {
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            firstname: true,
+            lastname: true,
+          },
+        },
+        fleet: {
+          select: {
+            id: true,
+            name: true,
+            organizationName: true,
+            fleetType: true,
+          },
+        },
+      },
+    });
+  }
+
+  public async updateVehicle(id: string, data: Partial<any>): Promise<any> {
+    return this.prisma.vehicle.update({
+      where: { id },
+      data: {
+        ...data,
+        updatedAt: new Date(),
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            firstname: true,
+            lastname: true,
+          },
+        },
+        fleet: {
+          select: {
+            id: true,
+            name: true,
+            organizationName: true,
+            fleetType: true,
+          },
+        },
+      },
+    });
+  }
+
+  public async softDeleteVehicle(id: string, deletedBy: string, reason?: string): Promise<any> {
+    return this.prisma.vehicle.update({
+      where: { id },
+      data: {
+        isActive: false,
+        status: 'Deleted',
+        deletedAt: new Date(),
+        deletedBy,
+        deleteReason: reason,
+        updatedAt: new Date(),
+      },
+    });
+  }
   // Configuration Management
   public async getChargePointConfiguration(chargePointId: string, key?: string): Promise<any[]> {
     return this.prisma.chargePointConfiguration.findMany({
@@ -814,6 +1020,635 @@ public async getAllUsers(): Promise<UserWithRelations[]> {
     });
 
     return tag
+  }
+
+  // System Settings Management
+  public async getSetting(key: string): Promise<any | null> {
+    const setting = await this.prisma.systemSettings.findUnique({
+      where: { key },
+    });
+
+    if (!setting) return null;
+
+    // Parse value based on data type
+    switch (setting.dataType) {
+      case 'NUMBER':
+        return parseFloat(setting.value);
+      case 'BOOLEAN':
+        return setting.value === 'true';
+      case 'JSON':
+        try {
+          return JSON.parse(setting.value);
+        } catch {
+          return setting.value;
+        }
+      default:
+        return setting.value;
+    }
+  }
+
+  public async setSetting(
+    key: string,
+    value: any,
+    changedBy: string,
+    changeReason?: string
+  ): Promise<any> {
+    // Get current setting for history
+    const currentSetting = await this.prisma.systemSettings.findUnique({
+      where: { key },
+    });
+
+    // Convert value to string for storage
+    let stringValue: string;
+    if (typeof value === 'object') {
+      stringValue = JSON.stringify(value);
+    } else {
+      stringValue = String(value);
+    }
+
+    // Record history if setting exists
+    if (currentSetting) {
+      await this.prisma.settingsHistory.create({
+        data: {
+          settingKey: key,
+          oldValue: currentSetting.value,
+          newValue: stringValue,
+          changedBy,
+          changeReason,
+        },
+      });
+    }
+
+    // Update or create setting
+    return this.prisma.systemSettings.upsert({
+      where: { key },
+      update: {
+        value: stringValue,
+        lastModifiedBy: changedBy,
+        lastModifiedAt: new Date(),
+        updatedAt: new Date(),
+      },
+      create: {
+        key,
+        value: stringValue,
+        dataType: this.inferDataType(value),
+        category: 'GENERAL',
+        displayName: this.formatDisplayName(key),
+        lastModifiedBy: changedBy,
+      },
+    });
+  }
+
+  public async getAllSettings(category?: string, isPublic?: boolean): Promise<any[]> {
+    return this.prisma.systemSettings.findMany({
+      where: {
+        ...(category && { category: category as any }),
+        ...(isPublic !== undefined && { isPublic }),
+      },
+      orderBy: [
+        { category: 'asc' },
+        { displayName: 'asc' },
+      ],
+    });
+  }
+
+  public async getSettingsByCategory(category: string): Promise<any[]> {
+    return this.prisma.systemSettings.findMany({
+      where: { category: category as any },
+      orderBy: { displayName: 'asc' },
+    });
+  }
+
+  public async createSetting(data: {
+    key: string;
+    value: any;
+    dataType?: 'STRING' | 'NUMBER' | 'BOOLEAN' | 'JSON' | 'EMAIL' | 'URL' | 'PASSWORD';
+    category?: string;
+    displayName: string;
+    description?: string;
+    unit?: string;
+    minValue?: number;
+    maxValue?: number;
+    allowedValues?: string[];
+    isRequired?: boolean;
+    isPublic?: boolean;
+    isEditable?: boolean;
+    requiresRestart?: boolean;
+    createdBy: string;
+  }): Promise<any> {
+    const stringValue = typeof data.value === 'object' 
+      ? JSON.stringify(data.value) 
+      : String(data.value);
+
+    return this.prisma.systemSettings.create({
+      data: {
+        key: data.key,
+        value: stringValue,
+        dataType: data.dataType || this.inferDataType(data.value),
+        category: (data.category as any) || 'GENERAL',
+        displayName: data.displayName,
+        description: data.description,
+        unit: data.unit,
+        minValue: data.minValue,
+        maxValue: data.maxValue,
+        allowedValues: data.allowedValues ? JSON.stringify(data.allowedValues) : null,
+        isRequired: data.isRequired || false,
+        isPublic: data.isPublic || false,
+        isEditable: data.isEditable !== false,
+        requiresRestart: data.requiresRestart || false,
+        lastModifiedBy: data.createdBy,
+      },
+    });
+  }
+
+  public async getSettingHistory(key: string, limit: number = 50): Promise<any[]> {
+    return this.prisma.settingsHistory.findMany({
+      where: { settingKey: key },
+      orderBy: { changedAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  public async deleteSetting(key: string, deletedBy: string, reason?: string): Promise<void> {
+    // Record deletion in history
+    const setting = await this.prisma.systemSettings.findUnique({
+      where: { key },
+    });
+
+    if (setting) {
+      await this.prisma.settingsHistory.create({
+        data: {
+          settingKey: key,
+          oldValue: setting.value,
+          newValue: "",
+          changedBy: deletedBy,
+          changeReason: reason || 'Setting deleted',
+        },
+      });
+
+      await this.prisma.systemSettings.delete({
+        where: { key },
+      });
+    }
+  }
+
+  // Helper methods for settings
+  private inferDataType(value: any): 'STRING' | 'NUMBER' | 'BOOLEAN' | 'JSON' {
+    if (typeof value === 'number') return 'NUMBER';
+    if (typeof value === 'boolean') return 'BOOLEAN';
+    if (typeof value === 'object') return 'JSON';
+    return 'STRING';
+  }
+
+  private formatDisplayName(key: string): string {
+    return key
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  // Convenience methods for common settings
+  public async getDefaultPricePerKWh(): Promise<number> {
+    const price = await this.getSetting('default_price_per_kwh');
+    return price || 0.15; // Default fallback
+  }
+
+  public async setDefaultPricePerKWh(price: number, changedBy: string): Promise<void> {
+    await this.setSetting('default_price_per_kwh', price, changedBy, 'Updated default pricing');
+  }
+
+  public async getSystemCurrency(): Promise<string> {
+    const currency = await this.getSetting('system_currency');
+    return currency || 'NGN';
+  }
+
+  public async getTaxRate(): Promise<number> {
+    const rate = await this.getSetting('default_tax_rate');
+    return rate || 0.0;
+  }
+
+  public async getMaxSessionDuration(): Promise<number> {
+    const duration = await this.getSetting('max_session_duration_hours');
+    return duration || 24; // 24 hours default
+  }
+
+  public async initializeDefaultSettings(): Promise<void> {
+    const defaultSettings = [
+      {
+        key: 'default_price_per_kwh',
+        value: 500,
+        dataType: 'NUMBER' as const,
+        category: 'PRICING' as const,
+        displayName: 'Default Price per kWh',
+        description: 'Default charging rate when no specific pricing tier applies',
+        unit: 'NGN',
+        minValue: 0.01,
+        maxValue: 10.0,
+        isPublic: true,
+        isRequired: true,
+      },
+      {
+        key: 'system_currency',
+        value: 'USD',
+        dataType: 'STRING' as const,
+        category: 'PRICING' as const,
+        displayName: 'System Currency',
+        description: 'Default currency for all transactions',
+        allowedValues: ['NGN','USD', 'EUR', 'GBP', 'CAD', 'AUD'],
+        isPublic: true,
+        isRequired: true,
+      },
+      {
+        key: 'default_tax_rate',
+        value: 0.08,
+        dataType: 'NUMBER' as const,
+        category: 'PRICING' as const,
+        displayName: 'Default Tax Rate',
+        description: 'Default tax rate applied to transactions',
+        unit: '%',
+        minValue: 0.0,
+        maxValue: 1.0,
+        isPublic: true,
+      },
+      {
+        key: 'max_session_duration_hours',
+        value: 24,
+        dataType: 'NUMBER' as const,
+        category: 'GENERAL' as const,
+        displayName: 'Maximum Session Duration',
+        description: 'Maximum allowed charging session duration',
+        unit: 'hours',
+        minValue: 1,
+        maxValue: 168, // 1 week
+        isPublic: true,
+      },
+      {
+        key: 'heartbeat_interval_seconds',
+        value: 300,
+        dataType: 'NUMBER' as const,
+        category: 'OCPP' as const,
+        displayName: 'Heartbeat Interval',
+        description: 'OCPP heartbeat interval in seconds',
+        unit: 'seconds',
+        minValue: 30,
+        maxValue: 3600,
+        requiresRestart: true,
+      },
+      {
+        key: 'enable_email_notifications',
+        value: true,
+        dataType: 'BOOLEAN' as const,
+        category: 'NOTIFICATION' as const,
+        displayName: 'Enable Email Notifications',
+        description: 'Send email notifications for important events',
+        isPublic: true,
+      },
+      {
+        key: 'smtp_settings',
+        value: {
+          host: '',
+          port: 587,
+          secure: false,
+          username: '',
+          password: ''
+        },
+        dataType: 'JSON' as const,
+        category: 'NOTIFICATION' as const,
+        displayName: 'SMTP Settings',
+        description: 'Email server configuration',
+        isEditable: true,
+      },
+      {
+        key: 'payment_processor_settings',
+        value: {
+          stripe: {
+            enabled: false,
+            publicKey: '',
+            secretKey: ''
+          },
+          paypal: {
+            enabled: false,
+            clientId: '',
+            clientSecret: ''
+          }
+        },
+        dataType: 'JSON' as const,
+        category: 'PAYMENT' as const,
+        displayName: 'Payment Processor Settings',
+        description: 'Configuration for payment processors',
+      },
+    ];
+
+    for (const setting of defaultSettings) {
+      const exists = await this.prisma.systemSettings.findUnique({
+        where: { key: setting.key },
+      });
+
+      if (!exists) {
+        await this.createSetting({
+          ...setting,
+          createdBy: 'system',
+        });
+      }
+    }
+  }
+
+  // Fleet Management
+  public async createFleet(data: {
+    name: string;
+    organizationName?: string;
+    registrationNumber?: string;
+    taxId?: string;
+    contactEmail: string;
+    contactPhone?: string;
+    website?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postalCode?: string;
+    fleetType?: 'COMMERCIAL' | 'GOVERNMENT' | 'LOGISTICS' | 'TAXI_RIDESHARE' | 'RENTAL' | 'PERSONAL' | 'UTILITY' | 'EMERGENCY' | 'PUBLIC_TRANSPORT' | 'OTHER';
+    billingEmail?: string;
+    accountManager?: string;
+    creditLimit?: number;
+    paymentTerms?: string;
+    logoImage?: string
+  }): Promise<Fleet> {
+    return this.prisma.fleet.create({
+      data,
+    });
+  }
+
+  public async getAllFleets(): Promise<Fleet[]> {
+    return this.prisma.fleet.findMany({
+      where: { isActive: true },
+      include: {
+        vehicles: {
+          where: { isActive: true },
+        },
+        fleetManagers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                email: true,
+                firstname: true,
+                lastname: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  public async getFleetById(id: string): Promise<Fleet | null> {
+    return this.prisma.fleet.findUnique({
+      where: { id },
+      include: {
+        vehicles: {
+          where: { isActive: true },
+        },
+        fleetManagers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                email: true,
+                firstname: true,
+                lastname: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  public async updateFleet(id: string, data: Partial<Fleet>): Promise<Fleet> {
+    return this.prisma.fleet.update({
+      where: { id },
+      data: {
+        ...data,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  public async softDeleteFleet(id: string, deletedBy: string, reason?: string): Promise<Fleet> {
+    return this.prisma.fleet.update({
+      where: { id },
+      data: {
+        isActive: false,
+        status: 'Deleted',
+        deletedAt: new Date(),
+        deletedBy,
+        deleteReason: reason,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  public async addFleetManager(data: {
+    fleetId: string;
+    userId: string;
+    role?: 'ADMIN' | 'MANAGER' | 'VIEWER' | 'BILLING';
+    canManageVehicles?: boolean;
+    canViewReports?: boolean;
+    canManageBilling?: boolean;
+    assignedBy?: string;
+  }): Promise<FleetManager> {
+    return this.prisma.fleetManager.create({
+      data: {
+        fleetId: data.fleetId,
+        userId: data.userId,
+        role: data.role || 'VIEWER',
+        canManageVehicles: data.canManageVehicles || false,
+        canViewReports: data.canViewReports || true,
+        canManageBilling: data.canManageBilling || false,
+        assignedBy: data.assignedBy,
+      },
+    });
+  }
+
+  public async removeFleetManager(fleetId: string, userId: string): Promise<FleetManager> {
+    return this.prisma.fleetManager.delete({
+      where: {
+        fleetId_userId: {
+          fleetId,
+          userId,
+        },
+      },
+    });
+  }
+
+  public async getFleetManagers(fleetId: string): Promise<FleetManager[]> {
+    return this.prisma.fleetManager.findMany({
+      where: { fleetId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            firstname: true,
+            lastname: true,
+          },
+        },
+      },
+    });
+  }
+
+  public async assignVehicleToFleet(vehicleId: string, fleetId: string, transferredBy?: string): Promise<any> {
+    // Get current vehicle to preserve audit trail
+    const vehicle = await this.prisma.vehicle.findUnique({
+      where: { id: vehicleId },
+    });
+
+    if (!vehicle) {
+      throw new Error('Vehicle not found');
+    }
+
+    return this.prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        fleetId,
+        ownerId: null, // Remove individual owner
+        transferredAt: new Date(),
+        transferredBy,
+        originalFleetId: vehicle.originalFleetId || fleetId, // Set if not already set
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  public async removeVehicleFromFleet(vehicleId: string, newOwnerId?: string, transferredBy?: string): Promise<any> {
+    return this.prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        fleetId: null,
+        ownerId: newOwnerId || null,
+        transferredAt: new Date(),
+        transferredBy,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  // Fleet Reporting Methods
+  public async getFleetTransactions(
+    fleetId: string,
+    startDate?: Date,
+    endDate?: Date,
+    limit?: number
+  ): Promise<Transaction[]> {
+    return this.prisma.transaction.findMany({
+      where: {
+        vehicle: {
+          fleetId: fleetId,
+        },
+        ...(startDate && { startTimestamp: { gte: startDate } }),
+        ...(endDate && { startTimestamp: { lte: endDate } }),
+      },
+      include: {
+        vehicle: true,
+        chargePoint: true,
+        connector: true,
+        idTag: {
+          include: {
+            user: true,
+          },
+        },
+      },
+      orderBy: { startTimestamp: 'desc' },
+      ...(limit && { take: limit }),
+    });
+  }
+
+  public async getFleetEnergyConsumption(
+    fleetId: string,
+    startDate?: Date,
+    endDate?: Date
+  ): Promise<{
+    totalSessions: number;
+    totalEnergyKWh: number;
+    averageEnergyPerSession: number;
+    totalCost: number;
+  }> {
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        vehicle: {
+          fleetId: fleetId,
+        },
+        stopTimestamp: { not: null }, // Only completed transactions
+        ...(startDate && { startTimestamp: { gte: startDate } }),
+        ...(endDate && { startTimestamp: { lte: endDate } }),
+      },
+      select: {
+        meterStart: true,
+        meterStop: true,
+      },
+    });
+
+    const totalSessions = transactions.length;
+    const totalEnergyKWh = transactions.reduce((sum: number, txn: any) => {
+      return sum + ((txn.meterStop || 0) - txn.meterStart);
+    }, 0);
+    const averageEnergyPerSession = totalSessions > 0 ? totalEnergyKWh / totalSessions : 0;
+    
+    // Calculate cost (you can adjust the rate as needed)
+    const energyRate = 0.15; // $0.15 per kWh - adjust as needed
+    const totalCost = totalEnergyKWh * energyRate;
+
+    return {
+      totalSessions,
+      totalEnergyKWh,
+      averageEnergyPerSession,
+      totalCost,
+    };
+  }
+
+  public async getFleetVehicleUtilization(fleetId: string): Promise<any[]> {
+    const vehicles = await this.prisma.vehicle.findMany({
+      where: {
+        fleetId,
+        isActive: true,
+      },
+      include: {
+        transactions: {
+          where: {
+            stopTimestamp: { not: null },
+          },
+          select: {
+            startTimestamp: true,
+            stopTimestamp: true,
+            meterStart: true,
+            meterStop: true,
+          },
+        },
+      },
+    });
+
+    return vehicles.map((vehicle: any) => {
+      const totalSessions = vehicle.transactions.length;
+      const totalEnergy = vehicle.transactions.reduce((sum: number, txn: any) => {
+        return sum + ((txn.meterStop || 0) - txn.meterStart);
+      }, 0);
+
+      return {
+        vehicleId: vehicle.id,
+        licensePlate: vehicle.licensePlate,
+        make: vehicle.make,
+        model: vehicle.model,
+        totalSessions,
+        totalEnergy,
+        lastUsed: vehicle.transactions.length > 0 
+          ? Math.max(...vehicle.transactions.map((t: any) => new Date(t.stopTimestamp!).getTime()))
+          : null,
+      };
+    });
   }
 
   // Utility methods

@@ -32,6 +32,7 @@ model ChargePoint {
   chargingData         ChargingData[]
   connectors           Connector[]
   transactions         Transaction[]
+  pricing              ChargePointPricing[]
 
   @@map("charge_points")
 }
@@ -103,6 +104,45 @@ model Transaction {
   startSoC Int?
   stopSoC Int?
 
+  // Vehicle relation (optional - not all transactions may have a vehicle)
+  vehicleId String?
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  
+  // Billing and Payment Fields
+  energyConsumed Float? // Calculated: meterStop - meterStart
+  pricePerKWh Float? // Price per kWh at time of transaction
+  totalAmount Float? // Total cost of the transaction
+  currency String @default("NGN") 
+  
+  // Payment Status
+  isPaid Boolean @default(false)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentMethod PaymentMethod?
+  paymentReference String? // External payment system reference
+  paidAt DateTime?
+  
+  // Billing Information
+  billingAddress String?
+  taxRate Float @default(0.0) // Tax rate applied (e.g., 0.08 for 8%)
+  taxAmount Float @default(0.0) // Calculated tax amount
+  discountAmount Float @default(0.0) // Any discounts applied
+  
+  // Pricing Tier (for different rates)
+  pricingTierId String?
+  pricingTier PricingTier? @relation(fields: [pricingTierId], references: [id])
+  
+  // Invoice relation
+  invoiceId String?
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  
+  // Audit trail - preserve user/vehicle/fleet info even if they're deleted
+  originalUserId String? // Store user ID at time of transaction
+  originalVehicleId String? // Store vehicle ID at time of transaction
+  originalFleetId String? // Store fleet ID at time of transaction (for reporting)
+  userDisplayName String? // Store username at time of transaction
+  vehicleDisplayName String? // Store vehicle info at time of transaction
+  fleetDisplayName String? // Store fleet name at time of transaction
+
   // Related Records
   meterValues MeterValue[]
 
@@ -139,7 +179,7 @@ model ChargingData {
   gunTemperature   Float
   stateOfCharge    Float
   chargeTime       Int
-  remainingTime    Int
+  remainingTime    Int    
   demandCurrent    Float
   timestamp        DateTime        @default(now())
   connector        Connector       @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
@@ -179,6 +219,81 @@ model SampledValue {
   @@map("sampled_values")
 }
 
+model Fleet {
+  id                String   @id @default(cuid())
+  fleetLogo         String?
+  
+  // Organization details
+  name              String
+  organizationName  String?  // Legal organization name if different from display name
+  registrationNumber String? @unique // Business registration number
+  taxId             String?  @unique // Tax identification number
+  
+  // Contact information
+  contactEmail      String
+  contactPhone      String?
+  website           String?
+  
+  // Address information
+  address           String?
+  city              String?
+  state             String?
+  country           String?
+  postalCode        String?
+  
+  // Fleet management
+  fleetSize         Int      @default(0) // Auto-calculated from vehicles count
+  fleetType         FleetType @default(COMMERCIAL) // Commercial, Government, Personal, etc.
+  
+  // Billing and account management
+  billingEmail      String?
+  accountManager    String?  // Assigned account manager
+  creditLimit       Float?   // Credit limit for charging
+  paymentTerms      String?  // Payment terms (NET30, etc.)
+  
+  // Status management for soft delete
+  isActive          Boolean  @default(true)
+  status            String   @default("Active") // "Active", "Suspended", "Deleted", "Pending"
+  
+  // Audit trail fields
+  deletedAt         DateTime?
+  deletedBy         String?  // ID of admin who deleted this fleet
+  deleteReason      String?  // Reason for deletion
+  
+  // Relationships
+  vehicles          Vehicle[]
+  fleetManagers     FleetManager[] // Users who can manage this fleet
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  logoImage         String?
+
+  @@map("fleets")
+}
+
+model FleetManager {
+  id        String @id @default(cuid())
+  
+  fleetId   String
+  fleet     Fleet  @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Management permissions
+  role      FleetManagerRole @default(VIEWER) // ADMIN, MANAGER, VIEWER
+  canManageVehicles Boolean @default(false)
+  canViewReports    Boolean @default(true)
+  canManageBilling  Boolean @default(false)
+  
+  // Audit trail
+  assignedAt DateTime @default(now())
+  assignedBy String?  // Who assigned this manager
+  
+  @@unique([fleetId, userId]) // One role per user per fleet
+  @@map("fleet_managers")
+}
+
 model User {
   id        String   @id @default(cuid())
   username  String   @unique
@@ -188,15 +303,24 @@ model User {
   phone     String?
   firstname String?
   lastname  String?
+  image     String?
+  
+  // Status management for soft delete
   isActive  Boolean  @default(true)
-  status    String?  @default("Active")
+  status    String?  @default("Active") // "Active", "Suspended", "Deleted", "Inactive"
   apiKey    String?  @unique
+
+  // Audit trail fields
+  deletedAt DateTime?
+  deletedBy String?  // ID of admin who deleted this user
+  deleteReason String? // Reason for deletion
 
   // One-to-one relation
   idTag   IdTag?  @relation(fields: [idTagId], references: [id])
   idTagId String? @unique // foreign key, must be unique for one-to-one
   
-  vehicles Vehicle[] // Fixed: proper relation name and array
+  vehicles Vehicle[] // Personal vehicles
+  fleetManagements FleetManager[] // Fleets this user manages
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -205,17 +329,7 @@ model User {
   permissions       Permission[]
 }
 
-model Vehicle { // Fixed: singular model name
-  id           String   @id @default(cuid())
-  userId       String
-  licensePlate String   @unique
-  make         String?
-  model        String?
-  color        String?
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("vehicles")
-}
+// Removed duplicate Vehicle model - keeping the more complete one below
 
 model Permission {
   id       String @id @default(cuid())
@@ -274,12 +388,254 @@ model IdTag {
   parentIdTag String?
   status      IdTagStatus @default(ACCEPTED)
 
-  user         User? // One-to-one back-relation
+  // Status management for soft delete
+  isActive    Boolean     @default(true)
+  
+  // Audit trail fields
+  deletedAt   DateTime?
+  deletedBy   String?     // ID of admin who deleted this idTag
+  deleteReason String?    // Reason for deletion
+  
+  // Expiry and lifecycle
   expiryDate   DateTime?
+  lastUsed     DateTime?  // Track when this tag was last used
+  
+  user         User? // One-to-one back-relation
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]
 }
+
+model PricingTier {
+  id                String   @id @default(cuid())
+  name              String   @unique // e.g., "Standard", "Premium", "Fleet"
+  description       String?
+  
+  // Pricing structure
+  pricePerKWh       Float    // Base price per kWh
+  currency          String   @default("NGN")
+  
+  // Time-based pricing (optional)
+  peakHourRate      Float?   // Higher rate during peak hours
+  offPeakRate       Float?   // Lower rate during off-peak hours
+  peakHoursStart    String?  // e.g., "08:00"
+  peakHoursEnd      String?  // e.g., "20:00"
+  
+  // Volume discounts
+  minimumKWh        Float?   // Minimum kWh for this tier
+  maximumKWh        Float?   // Maximum kWh for this tier
+  
+  // Membership requirements
+  requiresMembership Boolean @default(false)
+  membershipType     String? // e.g., "PREMIUM", "FLEET"
+  
+  // Status
+  isActive          Boolean  @default(true)
+  validFrom         DateTime @default(now())
+  validUntil        DateTime?
+  
+  // Relations
+  transactions      Transaction[]
+  chargePoints      ChargePointPricing[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("pricing_tiers")
+}
+
+model ChargePointPricing {
+  id            String      @id @default(cuid())
+  chargePointId String
+  pricingTierId String
+  
+  // Override pricing for specific charge points
+  customPricePerKWh Float?  // Override the tier's default price
+  
+  chargePoint   ChargePoint @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+  pricingTier   PricingTier @relation(fields: [pricingTierId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([chargePointId, pricingTierId])
+  @@map("charge_point_pricing")
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  invoiceNumber     String   @unique // Human-readable invoice number
+  
+  // Customer information
+  customerId        String?  // User or Fleet ID
+  customerType      CustomerType // USER or FLEET
+  customerName      String
+  customerEmail     String
+  billingAddress    String?
+  
+  // Invoice details
+  issueDate         DateTime @default(now())
+  dueDate           DateTime
+  paidDate          DateTime?
+  
+  // Amounts
+  subtotal          Float    // Sum of all transaction amounts
+  taxAmount         Float    @default(0.0)
+  discountAmount    Float    @default(0.0)
+  totalAmount       Float    // Final amount to pay
+  currency          String   @default("USD")
+  
+  // Status
+  status            InvoiceStatus @default(DRAFT)
+  paymentStatus     PaymentStatus @default(PENDING)
+  
+  // Payment information
+  paymentMethod     PaymentMethod?
+  paymentReference  String?  // External payment system reference
+  
+  // Relations
+  transactions      Transaction[]
+  payments          Payment[]
+  
+  // Audit
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("invoices")
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  
+  // Payment details
+  amount            Float
+  currency          String        @default("USD")
+  paymentMethod     PaymentMethod
+  paymentReference  String?       // External payment system reference
+  
+  // Status
+  status            PaymentStatus @default(PENDING)
+  processedAt       DateTime?
+  
+  // Relations
+  invoiceId         String?
+  invoice           Invoice?      @relation(fields: [invoiceId], references: [id])
+  
+  // Customer information (for direct payments without invoice)
+  customerId        String?
+  customerType      CustomerType?
+  
+  // Payment processor details
+  processorName     String?       // e.g., "Stripe", "PayPal", "Square"
+  processorTransactionId String?  // Transaction ID from payment processor
+  
+  // Failure information
+  failureReason     String?
+  failureCode       String?
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model SystemSettings {
+  id                String   @id @default(cuid())
+  key               String   @unique // Setting identifier (e.g., "default_price_per_kwh")
+  value             String   // JSON string or simple value
+  dataType          SettingDataType @default(STRING) // STRING, NUMBER, BOOLEAN, JSON
+  category          SettingCategory @default(GENERAL) // Group related settings
+  
+  // Metadata
+  displayName       String   // Human-readable name
+  description       String?  // What this setting controls
+  unit              String?  // e.g., "USD", "kWh", "minutes"
+  
+  // Validation
+  minValue          Float?   // For numeric settings
+  maxValue          Float?   // For numeric settings
+  allowedValues     String?  // JSON array of allowed values
+  isRequired        Boolean  @default(false)
+  
+  // Access control
+  isPublic          Boolean  @default(false) // Can be read by non-admin users
+  isEditable        Boolean  @default(true)  // Can be modified
+  requiresRestart   Boolean  @default(false) // System restart needed after change
+  
+  // Audit trail
+  lastModifiedBy    String?  // User ID who last changed this
+  lastModifiedAt    DateTime @default(now())
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model SettingsHistory {
+  id                String   @id @default(cuid())
+  settingKey        String   // Reference to SystemSettings.key
+  oldValue          String?  // Previous value
+  newValue          String   // New value
+  changedBy         String   // User ID who made the change
+  changeReason      String?  // Optional reason for the change
+  changedAt         DateTime @default(now())
+
+  @@map("settings_history")
+}
+
+model Vehicle {
+  id                 String   @id @default(cuid())
+
+  // Owner relationship (individual owner)
+  ownerId            String?  // Made optional for fleet vehicles
+  owner              User?    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  
+  // Fleet relationship (organizational owner)
+  fleetId            String?  // Optional - vehicle can belong to fleet OR individual
+  fleet              Fleet?   @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  vin                String?  @unique
+  licensePlate       String?
+  nickname           String?
+
+  make               String
+  model              String
+  year               Int?
+  vehicleType        VehicleType
+
+  batteryCapacityKWh Float
+  maxACPowerKW       Float?
+  maxDCPowerKW       Float?
+
+  chargingStandards  ChargingStandard[]
+  car_image          String?
+
+  // Status management for soft delete
+  isActive           Boolean  @default(true)
+  status             String   @default("Active") // "Active", "Inactive", "Transferred", "Deleted"
+  
+  // Audit trail fields
+  deletedAt          DateTime?
+  deletedBy          String?  // ID of admin who deleted this vehicle
+  deleteReason       String?  // Reason for deletion
+  
+  // Ownership audit trail
+  originalOwnerId    String?  // Individual owner ID (if applicable)
+  originalFleetId    String?  // Fleet ID (if applicable)
+  transferredAt      DateTime? // When ownership was last transferred
+  transferredBy      String?  // Who authorized the transfer
+
+  // Many-to-many relation with transactions (a vehicle can have multiple transactions)
+  transactions       Transaction[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Note: Ensure in application logic that vehicle belongs to either individual OR fleet, not both
+  @@map("vehicles")
+}
+
 
 enum ConnectorType {
   CCS
@@ -368,4 +724,132 @@ enum IdTagStatus {
   CONCURRENT_TX
 
   @@map("id_tag_status")
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  HATCHBACK
+  COUPE
+  CONVERTIBLE
+  TRUCK
+  VAN
+  MOTORCYCLE
+  BUS
+  OTHER
+
+  @@map("vehicle_type")
+}
+
+enum ChargingStandard {
+  CCS1
+  CCS2
+  CHADEMO
+  TYPE1_AC
+  TYPE2_AC
+  TESLA_SUPERCHARGER
+  GBT_AC
+  GBT_DC
+  GBT
+  TYPE2
+  CCS
+
+  @@map("charging_standard")
+}
+
+enum FleetType {
+  COMMERCIAL      // Commercial businesses
+  GOVERNMENT      // Government agencies
+  LOGISTICS       // Delivery/logistics companies
+  TAXI_RIDESHARE  // Taxi and rideshare services
+  RENTAL          // Car rental companies
+  PERSONAL        // Large personal fleets
+  UTILITY         // Utility companies
+  EMERGENCY       // Emergency services
+  PUBLIC_TRANSPORT // Buses, public vehicles
+  OTHER
+
+  @@map("fleet_type")
+}
+
+enum FleetManagerRole {
+  ADMIN    // Full fleet management access
+  MANAGER  // Can manage vehicles and view reports
+  VIEWER   // Read-only access to fleet data
+  BILLING  // Billing and payment management only
+
+  @@map("fleet_manager_role")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@map("payment_status")
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  PAYPAL
+  STRIPE
+  APPLE_PAY
+  GOOGLE_PAY
+  CASH
+  FLEET_ACCOUNT
+  SUBSCRIPTION
+
+  @@map("payment_method")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  OVERDUE
+  PAID
+  CANCELLED
+  REFUNDED
+
+  @@map("invoice_status")
+}
+
+enum CustomerType {
+  USER
+  FLEET
+
+  @@map("customer_type")
+}
+
+enum SettingDataType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+  EMAIL
+  URL
+  PASSWORD
+
+  @@map("setting_data_type")
+}
+
+enum SettingCategory {
+  GENERAL           // General system settings
+  PRICING           // Pricing and billing settings
+  PAYMENT           // Payment processor settings
+  NOTIFICATION      // Email/SMS notification settings
+  SECURITY          // Security and authentication settings
+  INTEGRATION       // Third-party integrations
+  OCPP              // OCPP protocol settings
+  MAINTENANCE       // System maintenance settings
+  REPORTING         // Reporting and analytics settings
+  UI                // User interface settings
+
+  @@map("setting_category")
 }
