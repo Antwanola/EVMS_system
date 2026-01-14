@@ -32,6 +32,7 @@ model ChargePoint {
   chargingData         ChargingData[]
   connectors           Connector[]
   transactions         Transaction[]
+  pricing              ChargePointPricing[]
 
   @@map("charge_points")
 }
@@ -107,6 +108,33 @@ model Transaction {
   vehicleId String?
   vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   
+  // Billing and Payment Fields
+  energyConsumed Float? // Calculated: meterStop - meterStart
+  pricePerKWh Float? // Price per kWh at time of transaction
+  totalAmount Float? // Total cost of the transaction
+  currency String @default("NGN") 
+  
+  // Payment Status
+  isPaid Boolean @default(false)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentMethod PaymentMethod?
+  paymentReference String? // External payment system reference
+  paidAt DateTime?
+  
+  // Billing Information
+  billingAddress String?
+  taxRate Float @default(0.0) // Tax rate applied (e.g., 0.08 for 8%)
+  taxAmount Float @default(0.0) // Calculated tax amount
+  discountAmount Float @default(0.0) // Any discounts applied
+  
+  // Pricing Tier (for different rates)
+  pricingTierId String?
+  pricingTier PricingTier? @relation(fields: [pricingTierId], references: [id])
+  
+  // Invoice relation
+  invoiceId String?
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  
   // Audit trail - preserve user/vehicle/fleet info even if they're deleted
   originalUserId String? // Store user ID at time of transaction
   originalVehicleId String? // Store vehicle ID at time of transaction
@@ -151,7 +179,7 @@ model ChargingData {
   gunTemperature   Float
   stateOfCharge    Float
   chargeTime       Int
-  remainingTime    Int
+  remainingTime    Int    
   demandCurrent    Float
   timestamp        DateTime        @default(now())
   connector        Connector       @relation(fields: [chargePointId, connectorId], references: [chargePointId, connectorId])
@@ -193,6 +221,7 @@ model SampledValue {
 
 model Fleet {
   id                String   @id @default(cuid())
+  fleetLogo         String?
   
   // Organization details
   name              String
@@ -237,6 +266,7 @@ model Fleet {
   
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  logoImage         String?
 
   @@map("fleets")
 }
@@ -273,6 +303,7 @@ model User {
   phone     String?
   firstname String?
   lastname  String?
+  image     String?
   
   // Status management for soft delete
   isActive  Boolean  @default(true)
@@ -375,6 +406,184 @@ model IdTag {
   transactions Transaction[]
 }
 
+model PricingTier {
+  id                String   @id @default(cuid())
+  name              String   @unique // e.g., "Standard", "Premium", "Fleet"
+  description       String?
+  
+  // Pricing structure
+  pricePerKWh       Float    // Base price per kWh
+  currency          String   @default("NGN")
+  
+  // Time-based pricing (optional)
+  peakHourRate      Float?   // Higher rate during peak hours
+  offPeakRate       Float?   // Lower rate during off-peak hours
+  peakHoursStart    String?  // e.g., "08:00"
+  peakHoursEnd      String?  // e.g., "20:00"
+  
+  // Volume discounts
+  minimumKWh        Float?   // Minimum kWh for this tier
+  maximumKWh        Float?   // Maximum kWh for this tier
+  
+  // Membership requirements
+  requiresMembership Boolean @default(false)
+  membershipType     String? // e.g., "PREMIUM", "FLEET"
+  
+  // Status
+  isActive          Boolean  @default(true)
+  validFrom         DateTime @default(now())
+  validUntil        DateTime?
+  
+  // Relations
+  transactions      Transaction[]
+  chargePoints      ChargePointPricing[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("pricing_tiers")
+}
+
+model ChargePointPricing {
+  id            String      @id @default(cuid())
+  chargePointId String
+  pricingTierId String
+  
+  // Override pricing for specific charge points
+  customPricePerKWh Float?  // Override the tier's default price
+  
+  chargePoint   ChargePoint @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+  pricingTier   PricingTier @relation(fields: [pricingTierId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([chargePointId, pricingTierId])
+  @@map("charge_point_pricing")
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  invoiceNumber     String   @unique // Human-readable invoice number
+  
+  // Customer information
+  customerId        String?  // User or Fleet ID
+  customerType      CustomerType // USER or FLEET
+  customerName      String
+  customerEmail     String
+  billingAddress    String?
+  
+  // Invoice details
+  issueDate         DateTime @default(now())
+  dueDate           DateTime
+  paidDate          DateTime?
+  
+  // Amounts
+  subtotal          Float    // Sum of all transaction amounts
+  taxAmount         Float    @default(0.0)
+  discountAmount    Float    @default(0.0)
+  totalAmount       Float    // Final amount to pay
+  currency          String   @default("USD")
+  
+  // Status
+  status            InvoiceStatus @default(DRAFT)
+  paymentStatus     PaymentStatus @default(PENDING)
+  
+  // Payment information
+  paymentMethod     PaymentMethod?
+  paymentReference  String?  // External payment system reference
+  
+  // Relations
+  transactions      Transaction[]
+  payments          Payment[]
+  
+  // Audit
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("invoices")
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  
+  // Payment details
+  amount            Float
+  currency          String        @default("USD")
+  paymentMethod     PaymentMethod
+  paymentReference  String?       // External payment system reference
+  
+  // Status
+  status            PaymentStatus @default(PENDING)
+  processedAt       DateTime?
+  
+  // Relations
+  invoiceId         String?
+  invoice           Invoice?      @relation(fields: [invoiceId], references: [id])
+  
+  // Customer information (for direct payments without invoice)
+  customerId        String?
+  customerType      CustomerType?
+  
+  // Payment processor details
+  processorName     String?       // e.g., "Stripe", "PayPal", "Square"
+  processorTransactionId String?  // Transaction ID from payment processor
+  
+  // Failure information
+  failureReason     String?
+  failureCode       String?
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model SystemSettings {
+  id                String   @id @default(cuid())
+  key               String   @unique // Setting identifier (e.g., "default_price_per_kwh")
+  value             String   // JSON string or simple value
+  dataType          SettingDataType @default(STRING) // STRING, NUMBER, BOOLEAN, JSON
+  category          SettingCategory @default(GENERAL) // Group related settings
+  
+  // Metadata
+  displayName       String   // Human-readable name
+  description       String?  // What this setting controls
+  unit              String?  // e.g., "USD", "kWh", "minutes"
+  
+  // Validation
+  minValue          Float?   // For numeric settings
+  maxValue          Float?   // For numeric settings
+  allowedValues     String?  // JSON array of allowed values
+  isRequired        Boolean  @default(false)
+  
+  // Access control
+  isPublic          Boolean  @default(false) // Can be read by non-admin users
+  isEditable        Boolean  @default(true)  // Can be modified
+  requiresRestart   Boolean  @default(false) // System restart needed after change
+  
+  // Audit trail
+  lastModifiedBy    String?  // User ID who last changed this
+  lastModifiedAt    DateTime @default(now())
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model SettingsHistory {
+  id                String   @id @default(cuid())
+  settingKey        String   // Reference to SystemSettings.key
+  oldValue          String?  // Previous value
+  newValue          String   // New value
+  changedBy         String   // User ID who made the change
+  changeReason      String?  // Optional reason for the change
+  changedAt         DateTime @default(now())
+
+  @@map("settings_history")
+}
+
 model Vehicle {
   id                 String   @id @default(cuid())
 
@@ -400,6 +609,7 @@ model Vehicle {
   maxDCPowerKW       Float?
 
   chargingStandards  ChargingStandard[]
+  car_image          String?
 
   // Status management for soft delete
   isActive           Boolean  @default(true)
@@ -540,6 +750,9 @@ enum ChargingStandard {
   TESLA_SUPERCHARGER
   GBT_AC
   GBT_DC
+  GBT
+  TYPE2
+  CCS
 
   @@map("charging_standard")
 }
@@ -566,4 +779,77 @@ enum FleetManagerRole {
   BILLING  // Billing and payment management only
 
   @@map("fleet_manager_role")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@map("payment_status")
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  PAYPAL
+  STRIPE
+  APPLE_PAY
+  GOOGLE_PAY
+  CASH
+  FLEET_ACCOUNT
+  SUBSCRIPTION
+
+  @@map("payment_method")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  OVERDUE
+  PAID
+  CANCELLED
+  REFUNDED
+
+  @@map("invoice_status")
+}
+
+enum CustomerType {
+  USER
+  FLEET
+
+  @@map("customer_type")
+}
+
+enum SettingDataType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+  EMAIL
+  URL
+  PASSWORD
+
+  @@map("setting_data_type")
+}
+
+enum SettingCategory {
+  GENERAL           // General system settings
+  PRICING           // Pricing and billing settings
+  PAYMENT           // Payment processor settings
+  NOTIFICATION      // Email/SMS notification settings
+  SECURITY          // Security and authentication settings
+  INTEGRATION       // Third-party integrations
+  OCPP              // OCPP protocol settings
+  MAINTENANCE       // System maintenance settings
+  REPORTING         // Reporting and analytics settings
+  UI                // User interface settings
+
+  @@map("setting_category")
 }
