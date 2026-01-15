@@ -239,6 +239,7 @@ public async createTransaction(data: {
   meterStart: number;
   startTimestamp: Date;
   reservationId?: number;
+  vehicleId?: string
 }): Promise<CreatedTransactionResult> { // <-- Updated return type for clarity
 
   const idTagRecord = await this.prisma.idTag.findUnique({
@@ -875,6 +876,101 @@ public async getAllUsers(): Promise<UserWithRelations[]> {
       },
     });
   }
+
+  public async getVehicleTransactions(
+    vehicleId: string,
+    options?: {
+      skip?: number;
+      take?: number;
+      startDate?: Date;
+      endDate?: Date;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    }
+  ): Promise<{ transactions: any[]; total: number }> {
+    const where: any = {
+      vehicleId,
+    };
+
+    // Add date filters if provided
+    if (options?.startDate || options?.endDate) {
+      where.startTimestamp = {};
+      if (options.startDate) {
+        where.startTimestamp.gte = options.startDate;
+      }
+      if (options.endDate) {
+        where.startTimestamp.lte = options.endDate;
+      }
+    }
+
+    // Build orderBy
+    const orderBy: any = {};
+    const sortBy = options?.sortBy || 'startTimestamp';
+    const sortOrder = options?.sortOrder || 'desc';
+    orderBy[sortBy] = sortOrder;
+
+    // Get transactions with count
+    const [transactions, total] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        skip: options?.skip,
+        take: options?.take,
+        orderBy,
+        include: {
+          chargePoint: {
+            select: {
+              id: true,
+              name: true,
+              location: true,
+              vendor: true,
+              model: true,
+            },
+          },
+          connector: {
+            select: {
+              connectorId: true,
+              type: true,
+              status: true,
+            },
+          },
+          idTag: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  email: true,
+                  firstname: true,
+                  lastname: true,
+                },
+              },
+            },
+          },
+          vehicle: {
+            select: {
+              id: true,
+              make: true,
+              model: true,
+              licensePlate: true,
+              vin: true,
+            },
+          },
+          meterValues: {
+            include: {
+              sampledValues: true,
+            },
+            orderBy: {
+              timestamp: 'asc',
+            },
+          },
+        },
+      }),
+      this.prisma.transaction.count({ where }),
+    ]);
+
+    return { transactions, total };
+  }
+
   // Configuration Management
   public async getChargePointConfiguration(chargePointId: string, key?: string): Promise<any[]> {
     return this.prisma.chargePointConfiguration.findMany({

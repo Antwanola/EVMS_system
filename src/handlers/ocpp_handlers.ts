@@ -23,10 +23,11 @@ import {
   ChargingStationData,
   LiveMeterState,
 } from "../types/ocpp_types";
-import { APIGateway } from "../services/api_gateway";
+import { APIGateway, pendingChargeSessions } from "../services/api_gateway";
 import crypto from "crypto"
 import { idTagStatus } from "../helpers/helper";
 import { StopReason} from "../types/ocpp_types"
+
 
 interface PendingCall {
   resolve: (value: any) => void;
@@ -490,6 +491,9 @@ export class OCPPMessageHandler {
     //     },
     //   };
     // }
+    const key = `${chargePointId}:${connectorId}`
+    const pending = pendingChargeSessions.get(key)
+    console.log("pending", pending)
 
     const transactionId = 100000 + crypto.randomInt(0, 900000);
     console.log({ transactionId });
@@ -502,6 +506,7 @@ export class OCPPMessageHandler {
       meterStart: payload.meterStart,
       startTimestamp: new Date(payload.timestamp),
       reservationId: payload.reservationId,
+      vehicleId: pending?.vehicleId,
     });
     console.log({ transaction });
 
@@ -581,11 +586,7 @@ export class OCPPMessageHandler {
     const mappedReason = (reason && stopReasonMap[reason] ? stopReasonMap[reason] : "OTHER") as StopReason;
 
     const connectorId = transaction.connectorId ?? 1;
-    const transactionPrimaryKey = transaction.id; // IMPORTANT: Prisma PK
-
-
-
-
+    const transactionPrimaryKey = transaction.id;
 
     // Update the transaction record with stopSoC
     const updateTXN = await this.db.stopTransaction(
@@ -595,8 +596,6 @@ export class OCPPMessageHandler {
       mappedReason,
       stopSoc // Pass stopSoC to the database method
     );
-
-    console.log({ updateTXN });
 
     // Update connector state
     await this.db.updateConnectorStatus(
