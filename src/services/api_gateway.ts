@@ -22,6 +22,15 @@ interface AuthenticatedRequest extends Request {
   user?: APIUser;
 }
 
+interface PendingChargeSession {
+  transactionType?: string
+  vehicleId: string
+  fleetId?: string
+  attendantIdTag: string
+  timestamp: number 
+}
+export const pendingChargeSessions = new Map<string, PendingChargeSession>(); // Key: `${chargePointId}:${connectorId}`
+
 export class APIGateway {
   private router: Router;
   private logger = Logger.getInstance();
@@ -137,16 +146,16 @@ export class APIGateway {
     this.router.post('/create-fleet', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.createFleet.bind(this))
     this.router.put('/edit-fleet/:fleetId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.updateFleetById.bind(this))
     this.router.delete('/fleet/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.deleteFleet.bind(this))
-    
+
     // Fleet vehicle management
     this.router.post('/fleet/:fleetId/vehicles', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.addVehicleToFleet.bind(this))
     this.router.delete('/fleet/:fleetId/vehicles/:vehicleId', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.removeVehicleFromFleet.bind(this))
     this.router.get('/fleet/:fleetId/vehicles', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.getFleetVehicles.bind(this))
-    
+
     // Fleet manager management
     this.router.post('/fleet/:fleetId/managers', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.addFleetManager.bind(this))
     this.router.delete('/fleet/:fleetId/managers/:userId', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.removeFleetManager.bind(this))
-    
+
     // Fleet reporting
     this.router.get('/fleet/:fleetId/transactions', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.getFleetTransactions.bind(this))
     this.router.get('/fleet/:fleetId/reports/energy', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.getFleetEnergyReport.bind(this))
@@ -155,6 +164,7 @@ export class APIGateway {
     // Vehicle management routes
     this.router.get('/vehicles', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.getAllVehicles.bind(this))
     this.router.get('/vehicles/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.getVehicleById.bind(this))
+    this.router.get('/vehicles/:id/transactions', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.getVehicleTransactions.bind(this))
     this.router.post('/create-vehicles', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.createVehicle.bind(this))
     this.router.put('/vehicles/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN', 'OPERATOR']), this.updateVehicle.bind(this))
     this.router.delete('/vehicles/:id', this.authenticateUser.bind(this), this.requireRole(['ADMIN']), this.deleteVehicle.bind(this))
@@ -920,15 +930,28 @@ export class APIGateway {
 
       }
 
+      const {
+        transactionType,
+        vehicleId,
+        fleetId,
+        idTag
+      } = req.body;
+
+      const Key = `${chargePointId}:${connectorId}`
+      pendingChargeSessions.set(Key, {transactionType, vehicleId, fleetId, attendantIdTag:idTag, timestamp: Date.now()})
+
+
+      console.log("the tf data", req.body)
+
+
+
       const operatorIdTag = req.user?.idTag?.idTag;
-      console.log({ operatorIdTag })
       if (!operatorIdTag) {
         throw new Error("no idTag detected for operator")
       }
 
       // Use getUserByIdTag instead of getUserById since operatorIdTag is the actual idTag string
       const idTagData = await this.db.getUserByIdTag(operatorIdTag);
-      console.log({ idTagData })
       if (!idTagData || idTagData.status !== "ACCEPTED") {
         throw new Error("Operator tag is not valid or accepted.");
       }
@@ -1378,13 +1401,13 @@ export class APIGateway {
   private async getFleetById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      
+
       if (!id) {
         return this.sendErrorResponse(res, 400, 'Fleet ID is required');
       }
 
       const fleet = await this.db.getFleetById(id);
-      
+
       if (!fleet) {
         return this.sendErrorResponse(res, 404, 'Fleet not found');
       }
@@ -1421,7 +1444,7 @@ export class APIGateway {
 
       // Validate fleet type if provided
       const validFleetTypes = [
-        'COMMERCIAL', 'GOVERNMENT', 'LOGISTICS', 'TAXI_RIDESHARE', 
+        'COMMERCIAL', 'GOVERNMENT', 'LOGISTICS', 'TAXI_RIDESHARE',
         'RENTAL', 'PERSONAL', 'UTILITY', 'EMERGENCY', 'PUBLIC_TRANSPORT', 'OTHER'
       ];
       if (requestData.fleetType && !validFleetTypes.includes(requestData.fleetType)) {
@@ -1444,7 +1467,7 @@ export class APIGateway {
 
       // Build clean update data object, excluding fields that might cause issues
       const updateData: any = {};
-      
+
       // Only include fields that are definitely in the schema
       const allowedFields = [
         'name', 'organizationName', 'registrationNumber', 'taxId',
@@ -1477,7 +1500,7 @@ export class APIGateway {
       });
     } catch (error: any) {
       this.logger.error('Error updating fleet:', error);
-      
+
       if (error.code === 'P2002') {
         if (error.meta?.target?.includes('registrationNumber')) {
           return this.sendErrorResponse(res, 409, 'Registration number already exists');
@@ -1486,7 +1509,7 @@ export class APIGateway {
           return this.sendErrorResponse(res, 409, 'Tax ID already exists');
         }
       }
-      
+
       return this.sendErrorResponse(res, 500, `Failed to update fleet: ${error.message}`);
     }
   }
@@ -1501,8 +1524,8 @@ export class APIGateway {
       }
 
       const deletedFleet = await this.db.softDeleteFleet(
-        id, 
-        req.user!.id, 
+        id,
+        req.user!.id,
         reason || 'Fleet deleted by admin'
       );
 
@@ -1532,8 +1555,8 @@ export class APIGateway {
       }
 
       const updatedVehicle = await this.db.assignVehicleToFleet(
-        vehicleId, 
-        fleetId, 
+        vehicleId,
+        fleetId,
         req.user!.id
       );
 
@@ -1543,11 +1566,11 @@ export class APIGateway {
       });
     } catch (error: any) {
       this.logger.error('Error adding vehicle to fleet:', error);
-      
+
       if (error.message?.includes('not found')) {
         return this.sendErrorResponse(res, 404, 'Vehicle not found');
       }
-      
+
       return this.sendErrorResponse(res, 500, 'Failed to add vehicle to fleet');
     }
   }
@@ -1562,8 +1585,8 @@ export class APIGateway {
       }
 
       const updatedVehicle = await this.db.removeVehicleFromFleet(
-        vehicleId, 
-        newOwnerId, 
+        vehicleId,
+        newOwnerId,
         req.user!.id
       );
 
@@ -1586,7 +1609,7 @@ export class APIGateway {
       }
 
       const fleet = await this.db.getFleetById(fleetId);
-      
+
       if (!fleet) {
         return this.sendErrorResponse(res, 404, 'Fleet not found');
       }
@@ -1610,12 +1633,12 @@ export class APIGateway {
   private async addFleetManager(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { fleetId } = req.params;
-      const { 
-        userId, 
-        role = 'VIEWER', 
-        canManageVehicles = false, 
-        canViewReports = true, 
-        canManageBilling = false 
+      const {
+        userId,
+        role = 'VIEWER',
+        canManageVehicles = false,
+        canViewReports = true,
+        canManageBilling = false
       } = req.body;
 
       if (!fleetId || !userId) {
@@ -1638,11 +1661,11 @@ export class APIGateway {
       });
     } catch (error: any) {
       this.logger.error('Error adding fleet manager:', error);
-      
+
       if (error.code === 'P2002') {
         return this.sendErrorResponse(res, 409, 'User is already a manager of this fleet');
       }
-      
+
       return this.sendErrorResponse(res, 500, 'Failed to add fleet manager');
     }
   }
@@ -1748,29 +1771,29 @@ export class APIGateway {
   private async getAllVehicles(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { page = '1', limit = '20', search, fleetId, ownerId } = req.query;
-      
+
       const pageNumber = Math.max(1, parseInt(page as string));
       const limitNumber = Math.max(1, Math.min(100, parseInt(limit as string)));
 
       const vehicles = await this.db.getAllVehicles();
-      
+
       // Apply filters if provided
       let filteredVehicles = vehicles;
-      
+
       if (search) {
         const searchTerm = (search as string).toLowerCase();
-        filteredVehicles = vehicles.filter((vehicle: any) => 
+        filteredVehicles = vehicles.filter((vehicle: any) =>
           vehicle.make?.toLowerCase().includes(searchTerm) ||
           vehicle.model?.toLowerCase().includes(searchTerm) ||
           vehicle.licensePlate?.toLowerCase().includes(searchTerm) ||
           vehicle.vin?.toLowerCase().includes(searchTerm)
         );
       }
-      
+
       if (fleetId) {
         filteredVehicles = filteredVehicles.filter((vehicle: any) => vehicle.fleetId === fleetId);
       }
-      
+
       if (ownerId) {
         filteredVehicles = filteredVehicles.filter((vehicle: any) => vehicle.ownerId === ownerId);
       }
@@ -1808,7 +1831,28 @@ export class APIGateway {
         return this.sendErrorResponse(res, 404, 'Vehicle not found');
       }
 
-      return this.sendSuccessResponse(res, { vehicle });
+      // Calculate transaction summary
+      const transactionSummary = {
+        totalSessions: vehicle.transactions?.length || 0,
+        completedSessions: vehicle.transactions?.filter((txn: any) => txn.stopTimestamp).length || 0,
+        activeSessions: vehicle.transactions?.filter((txn: any) => !txn.stopTimestamp).length || 0,
+        totalEnergyKWh: vehicle.transactions?.reduce((sum: number, txn: any) => {
+          const energy = txn.meterStop && txn.meterStart 
+            ? (txn.meterStop - txn.meterStart) / 1000 
+            : 0;
+          return sum + energy;
+        }, 0) || 0,
+        totalCost: vehicle.transactions?.reduce((sum: number, txn: any) => {
+          return sum + (txn.totalAmount || 0);
+        }, 0) || 0,
+        currency: vehicle.transactions?.[0]?.currency || 'NGN',
+        lastChargeDate: vehicle.transactions?.[0]?.startTimestamp || null
+      };
+
+      return this.sendSuccessResponse(res, { 
+        vehicle,
+        transactionSummary
+      });
     } catch (error) {
       this.logger.error('Error fetching vehicle:', error);
       return this.sendErrorResponse(res, 500, 'Failed to fetch vehicle');
@@ -1848,7 +1892,7 @@ export class APIGateway {
 
       // Validate vehicle type
       const validVehicleTypes = [
-        'SEDAN', 'SUV', 'HATCHBACK', 'COUPE', 'CONVERTIBLE', 
+        'SEDAN', 'SUV', 'HATCHBACK', 'COUPE', 'CONVERTIBLE',
         'TRUCK', 'VAN', 'MOTORCYCLE', 'BUS', 'OTHER'
       ];
       if (!validVehicleTypes.includes(mappedVehicleType)) {
@@ -1864,14 +1908,14 @@ export class APIGateway {
 
       let mappedChargingStandards = chargingStandards;
       if (chargingStandards && Array.isArray(chargingStandards)) {
-        mappedChargingStandards = chargingStandards.map((standard: string) => 
+        mappedChargingStandards = chargingStandards.map((standard: string) =>
           chargingStandardMapping[standard] || standard
         );
       }
 
       // Validate charging standards
       const validChargingStandards = [
-        'CCS1', 'CCS2', 'CHADEMO', 'TYPE1_AC', 'TYPE2_AC', 
+        'CCS1', 'CCS2', 'CHADEMO', 'TYPE1_AC', 'TYPE2_AC',
         'TESLA_SUPERCHARGER', 'GBT_AC', 'GBT_DC'
       ];
       if (mappedChargingStandards && Array.isArray(mappedChargingStandards)) {
@@ -1918,17 +1962,17 @@ export class APIGateway {
       });
     } catch (error: any) {
       this.logger.error('Error creating vehicle:', error);
-      
+
       if (error.code === 'P2002') {
         if (error.meta?.target?.includes('vin')) {
           return this.sendErrorResponse(res, 409, 'VIN already exists');
         }
       }
-      
+
       if (error.message?.includes('cannot belong to both')) {
         return this.sendErrorResponse(res, 400, error.message);
       }
-      
+
       return this.sendErrorResponse(res, 500, 'Failed to create vehicle');
     }
   }
@@ -1952,7 +1996,7 @@ export class APIGateway {
       // Validate vehicle type if provided
       if (updateData.vehicleType) {
         const validVehicleTypes = [
-          'SEDAN', 'SUV', 'HATCHBACK', 'COUPE', 'CONVERTIBLE', 
+          'SEDAN', 'SUV', 'HATCHBACK', 'COUPE', 'CONVERTIBLE',
           'TRUCK', 'VAN', 'MOTORCYCLE', 'BUS', 'OTHER'
         ];
         if (!validVehicleTypes.includes(updateData.vehicleType)) {
@@ -1963,7 +2007,7 @@ export class APIGateway {
       // Validate charging standards if provided
       if (updateData.chargingStandards && Array.isArray(updateData.chargingStandards)) {
         const validChargingStandards = [
-          'CCS1', 'CCS2', 'CHADEMO', 'TYPE1_AC', 'TYPE2_AC', 
+          'CCS1', 'CCS2', 'CHADEMO', 'TYPE1_AC', 'TYPE2_AC',
           'TESLA_SUPERCHARGER', 'GBT_AC', 'GBT_DC', 'TYPE2', 'CCS'
         ];
         const invalidStandards = updateData.chargingStandards.filter(
@@ -1993,13 +2037,13 @@ export class APIGateway {
       });
     } catch (error: any) {
       this.logger.error('Error updating vehicle:', error);
-      
+
       if (error.code === 'P2002') {
         if (error.meta?.target?.includes('vin')) {
           return this.sendErrorResponse(res, 409, 'VIN already exists');
         }
       }
-      
+
       return this.sendErrorResponse(res, 500, 'Failed to update vehicle');
     }
   }
@@ -2034,6 +2078,106 @@ export class APIGateway {
       this.logger.error('Error deleting vehicle:', error);
       return this.sendErrorResponse(res, 500, 'Failed to delete vehicle');
     }
+  }
+
+  private async getVehicleTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { 
+        page = '1', 
+        limit = '20', 
+        startDate, 
+        endDate,
+        sortBy = 'startTimestamp',
+        sortOrder = 'desc'
+      } = req.query;
+
+      if (!id) {
+        return this.sendErrorResponse(res, 400, 'Vehicle ID is required');
+      }
+
+      // Check if vehicle exists
+      const vehicle = await this.db.getVehicleById(id);
+      if (!vehicle) {
+        return this.sendErrorResponse(res, 404, 'Vehicle not found');
+      }
+
+      const pageNumber = Math.max(1, parseInt(page as string, 10));
+      const limitNumber = Math.max(1, Math.min(100, parseInt(limit as string, 10)));
+
+      // Build date filter
+      const dateFilter: any = {};
+      if (startDate) {
+        dateFilter.gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        dateFilter.lte = new Date(endDate as string);
+      }
+
+      // Get transactions with pagination
+      const result = await this.db.getVehicleTransactions(id, {
+        skip: (pageNumber - 1) * limitNumber,
+        take: limitNumber,
+        startDate: dateFilter.gte,
+        endDate: dateFilter.lte,
+        sortBy: sortBy as string,
+        sortOrder: sortOrder as 'asc' | 'desc'
+      });
+
+      // Calculate summary statistics
+      const summary = {
+        totalSessions: result.total,
+        totalEnergyKWh: result.transactions.reduce((sum, txn) => {
+          const energy = txn.meterStop && txn.meterStart 
+            ? (txn.meterStop - txn.meterStart) / 1000 
+            : 0;
+          return sum + energy;
+        }, 0),
+        totalCost: result.transactions.reduce((sum, txn) => {
+          return sum + (txn.totalAmount || 0);
+        }, 0),
+        completedSessions: result.transactions.filter(txn => txn.stopTimestamp).length,
+        activeSessions: result.transactions.filter(txn => !txn.stopTimestamp).length,
+        averageSessionDuration: this.calculateAverageSessionDuration(result.transactions),
+        currency: result.transactions[0]?.currency || 'NGN'
+      };
+
+      return this.sendSuccessResponse(res, {
+        vehicle: {
+          id: vehicle.id,
+          make: vehicle.make,
+          model: vehicle.model,
+          licensePlate: vehicle.licensePlate,
+          vin: vehicle.vin
+        },
+        transactions: result.transactions,
+        summary,
+        pagination: {
+          total: result.total,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages: Math.ceil(result.total / limitNumber)
+        }
+      });
+    } catch (error) {
+      this.logger.error('Error fetching vehicle transactions:', error);
+      return this.sendErrorResponse(res, 500, 'Failed to fetch vehicle transactions');
+    }
+  }
+
+  private calculateAverageSessionDuration(transactions: any[]): number {
+    const completedTransactions = transactions.filter(txn => 
+      txn.startTimestamp && txn.stopTimestamp
+    );
+
+    if (completedTransactions.length === 0) return 0;
+
+    const totalDuration = completedTransactions.reduce((sum, txn) => {
+      const duration = new Date(txn.stopTimestamp).getTime() - new Date(txn.startTimestamp).getTime();
+      return sum + duration;
+    }, 0);
+
+    return Math.round(totalDuration / completedTransactions.length / 1000 / 60); // Return in minutes
   }
 
   // System Settings endpoints
